@@ -1,0 +1,27 @@
+{
+  "name": "xplane-mcdu-a333",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Web/tablet MCDU (CDU) interface for X-Plane 12's stock Airbus A330, driven by X-Plane's built-in Web API.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/larsten42/xplane-mcdu-a333.git"
+  },
+  "homepage": "https://github.com/larsten42/xplane-mcdu-a333#readme",
+  "bugs": {
+    "url": "https://github.com/larsten42/xplane-mcdu-a333/issues"
+  },
+  "scripts": {
+    "start": "node tools/mcdu-server.js",
+    "mock": "node tools/mock-xplane-server/server.js",
+    "build:release": "node tools/build-release.mjs"
+  },
+  "devDependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=22.4.0"
+  }
+}

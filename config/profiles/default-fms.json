@@ -1,0 +1,162 @@
+{
+  "id": "xplane12-default-fms",
+  "label": "X-Plane 12 default FMS/MCDU",
+  "description": "Screen and keypad mapping for X-Plane 12's built-in default FMS, confirmed live against a running X-Plane 12.4.3 with the stock Airbus A330 loaded (2026-08-04, via tools/smoke-test.mjs). Command names live under sim/FMS (CDU1), sim/FMS2 (CDU2), sim/CDU3 (CDU3) — same key set, three different prefixes, hence commandPrefixByCdu below. Re-run the smoke test on other default aircraft before trusting this unchanged; add-on airliners (Zibo 737, FlightFactor, ToLiss, ...) use entirely different, aircraft-specific namespaces.",
+
+  "screen": {
+    "_note": "X-Plane exposes 16 text/style dataref slots (line0..line15), but the real CDU only ever renders 14 (title + 6 label/data pairs + scratchpad) — lines 14/15 were consistently blank in live captures. Rendering all 16 anyway just adds two rows of dead black space at the bottom.",
+    "lines": 14,
+    "cols": 24,
+    "textDatarefTemplate": "sim/cockpit2/radios/indicators/fms_cdu{cdu}_text_line{line}",
+    "styleDatarefTemplate": "sim/cockpit2/radios/indicators/fms_cdu{cdu}_style_line{line}"
+  },
+
+  "commandPrefixByCdu": {
+    "1": "sim/FMS",
+    "2": "sim/FMS2",
+    "3": "sim/CDU3"
+  },
+
+  "_note_on_verified_flag": "verified:true means this exact suffix (under the CDU's prefix above) was seen in a live X-Plane 12.4.3 command list on 2026-08-04. Buttons whose composed command still fails to resolve at connect time (e.g. a future X-Plane version renames something) are disabled in the UI rather than silently doing nothing.",
+  "_note_on_brightness_group": "keys.brightness (BRT/DIM) is the one exception to commandPrefixByCdu: unlike everything else in this file, laminar/A333/buttons/fmsN_brightness_up/dn is Airbus-specific (not a generic sim/FMS* name), found alongside the keypad commands during the same live scan. Its entries use commandTemplate ({cdu} substituted directly) instead of the prefix+command composition.",
+
+  "keys": {
+    "numeric": {
+      "0": { "command": "key_0", "verified": true },
+      "1": { "command": "key_1", "verified": true },
+      "2": { "command": "key_2", "verified": true },
+      "3": { "command": "key_3", "verified": true },
+      "4": { "command": "key_4", "verified": true },
+      "5": { "command": "key_5", "verified": true },
+      "6": { "command": "key_6", "verified": true },
+      "7": { "command": "key_7", "verified": true },
+      "8": { "command": "key_8", "verified": true },
+      "9": { "command": "key_9", "verified": true }
+    },
+    "alpha": {
+      "A": { "command": "key_A", "verified": true },
+      "B": { "command": "key_B", "verified": true },
+      "C": { "command": "key_C", "verified": true },
+      "D": { "command": "key_D", "verified": true },
+      "E": { "command": "key_E", "verified": true },
+      "F": { "command": "key_F", "verified": true },
+      "G": { "command": "key_G", "verified": true },
+      "H": { "command": "key_H", "verified": true },
+      "I": { "command": "key_I", "verified": true },
+      "J": { "command": "key_J", "verified": true },
+      "K": { "command": "key_K", "verified": true },
+      "L": { "command": "key_L", "verified": true },
+      "M": { "command": "key_M", "verified": true },
+      "N": { "command": "key_N", "verified": true },
+      "O": { "command": "key_O", "verified": true },
+      "P": { "command": "key_P", "verified": true },
+      "Q": { "command": "key_Q", "verified": true },
+      "R": { "command": "key_R", "verified": true },
+      "S": { "command": "key_S", "verified": true },
+      "T": { "command": "key_T", "verified": true },
+      "U": { "command": "key_U", "verified": true },
+      "V": { "command": "key_V", "verified": true },
+      "W": { "command": "key_W", "verified": true },
+      "X": { "command": "key_X", "verified": true },
+      "Y": { "command": "key_Y", "verified": true },
+      "Z": { "command": "key_Z", "verified": true },
+      "SP": { "command": "key_space", "verified": true }
+    },
+    "punctuation": {
+      "PERIOD": { "command": "key_period", "verified": true },
+      "MINUS": { "command": "key_minus", "verified": true },
+      "SLASH": { "command": "key_slash", "verified": true },
+      "CLR": { "command": "key_clear", "verified": true },
+      "DEL": { "command": "key_delete", "verified": true },
+      "BACK": { "command": "key_back", "verified": true },
+      "OVERFLY": { "command": "key_overfly", "verified": true }
+    },
+    "line_select_left": {
+      "L1": { "command": "ls_1l", "verified": true },
+      "L2": { "command": "ls_2l", "verified": true },
+      "L3": { "command": "ls_3l", "verified": true },
+      "L4": { "command": "ls_4l", "verified": true },
+      "L5": { "command": "ls_5l", "verified": true },
+      "L6": { "command": "ls_6l", "verified": true }
+    },
+    "line_select_right": {
+      "R1": { "command": "ls_1r", "verified": true },
+      "R2": { "command": "ls_2r", "verified": true },
+      "R3": { "command": "ls_3r", "verified": true },
+      "R4": { "command": "ls_4r", "verified": true },
+      "R5": { "command": "ls_5r", "verified": true },
+      "R6": { "command": "ls_6r", "verified": true }
+    },
+    "function": {
+      "INDEX": { "command": "index", "verified": true },
+      "FPLN": { "command": "fpln", "verified": true },
+      "CLB": { "command": "clb", "verified": true },
+      "CRZ": { "command": "crz", "verified": true },
+      "DES": { "command": "des", "verified": true },
+      "DIR_INTC": { "command": "dir_intc", "verified": true },
+      "DEP_ARR": { "command": "dep_arr", "verified": true },
+      "HOLD": { "command": "hold", "verified": true },
+      "EXEC": { "command": "exec", "verified": true },
+      "FIX": { "command": "fix", "verified": true },
+      "AIRPORT": { "command": "airport", "verified": true },
+      "ATC_COMM": { "command": "atc_comm", "verified": true },
+      "DATA": { "command": "data", "verified": true },
+      "FUEL_PRED": { "command": "fuel_pred", "verified": true },
+      "MENU": { "command": "menu", "verified": true },
+      "NAVRAD": { "command": "navrad", "verified": true },
+      "PREV": { "command": "prev", "verified": true },
+      "NEXT": { "command": "next", "verified": true },
+      "PERF": { "command": "perf", "verified": true },
+      "PROG": { "command": "prog", "verified": true },
+      "SEC_FPLN": { "command": "sec_fpln", "verified": true },
+      "UP": { "command": "up", "verified": true },
+      "DOWN": { "command": "down", "verified": true },
+      "LEGS": { "command": "legs", "verified": true },
+      "CDU_POPUP": { "command": "CDU_popup", "verified": true },
+      "CDU_POPOUT": { "command": "CDU_popout", "verified": true }
+    },
+    "brightness": {
+      "BRT": { "commandTemplate": "laminar/A333/buttons/fms{cdu}_brightness_up", "verified": true },
+      "DIM": { "commandTemplate": "laminar/A333/buttons/fms{cdu}_brightness_dn", "verified": true }
+    }
+  },
+
+  "keypadLayout": {
+    "_note": "Physical bezel layout, keyed by the same key names as `keys` above (grouping there is just for command-resolution bookkeeping; positions here are purely presentational). Matches a screenshot of the real X-Plane default Airbus MCDU keypad (2026-08-04). \"\" = a real, visible, unlabeled/inert keycap on the bezel (e.g. next to AIRPORT). Four separate, independently-styled, clean-rectangle blocks (functionBlock/utilityBlock/numericBlock/alphaBlock) rather than one grid padded with nulls to force a shape it isn't — utilityBlock+numericBlock stack in a column beside alphaBlock, all left-aligned so columns still line up (see css/mcdu.css .mcdu-keypad*) without needing filler cells.",
+    "functionBlock": {
+      "cols": 7,
+      "rows": [
+        ["DIR_INTC", "PROG", "PERF", "INDEX", "DATA", "", "BRT"],
+        ["FPLN", "NAVRAD", "FUEL_PRED", "SEC_FPLN", "ATC_COMM", "MENU", "DIM"]
+      ]
+    },
+    "utilityBlock": {
+      "cols": 2,
+      "rows": [
+        ["AIRPORT", ""],
+        ["PREV", "UP"],
+        ["NEXT", "DOWN"]
+      ]
+    },
+    "numericBlock": {
+      "cols": 3,
+      "rows": [
+        ["1", "2", "3"],
+        ["4", "5", "6"],
+        ["7", "8", "9"],
+        ["PERIOD", "0", "MINUS"]
+      ]
+    },
+    "alphaBlock": {
+      "cols": 5,
+      "rows": [
+        ["A", "B", "C", "D", "E"],
+        ["F", "G", "H", "I", "J"],
+        ["K", "L", "M", "N", "O"],
+        ["P", "Q", "R", "S", "T"],
+        ["U", "V", "W", "X", "Y"],
+        ["Z", "SLASH", "SP", "OVERFLY", "CLR"]
+      ]
+    }
+  }
+}

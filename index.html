@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>MCDU — X-Plane 12 Web CDU</title>
+  <link rel="stylesheet" href="./css/mcdu.css" />
+</head>
+<body>
+  <header class="connection-bar">
+    <label>CDU
+      <select id="conn-cdu">
+        <option value="1">1 · CAPT</option>
+        <option value="2">2 · F/O</option>
+        <option value="3">3 · OBS</option>
+      </select>
+    </label>
+    <button id="conn-connect" type="button">Connect</button>
+    <span id="conn-status" class="status status-closed">not connected</span>
+    <label>Key style
+      <select id="theme-select">
+        <option value="flat">Flat</option>
+        <option value="bevel">Bevel</option>
+        <option value="deboss">Deboss</option>
+      </select>
+    </label>
+  </header>
+  <button id="bar-toggle" class="bar-toggle" type="button" aria-label="Hide top bar" title="Hide top bar">▲</button>
+  <button id="fullscreen-toggle" class="bar-toggle fullscreen-toggle" type="button" aria-label="Enter full screen" title="Enter full screen">⛶</button>
+
+  <main class="mcdu-unit">
+    <div class="mcdu-lsk-column" id="mcdu-lsk-left"></div>
+    <div class="mcdu-screen-frame">
+      <div class="mcdu-screen" id="mcdu-screen"></div>
+    </div>
+    <div class="mcdu-lsk-column" id="mcdu-lsk-right"></div>
+  </main>
+
+  <div class="mcdu-keypad">
+    <section class="mcdu-block mcdu-block-menu" id="mcdu-block-function"></section>
+    <div class="mcdu-keypad-lower">
+      <div class="mcdu-keypad-left-col">
+        <section class="mcdu-block mcdu-block-menu" id="mcdu-block-utility"></section>
+        <section class="mcdu-block mcdu-block-numeric" id="mcdu-block-numeric"></section>
+      </div>
+      <section class="mcdu-block mcdu-block-alpha" id="mcdu-block-alpha"></section>
+    </div>
+  </div>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

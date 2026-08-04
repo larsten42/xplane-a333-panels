@@ -1,0 +1,635 @@
+/* Classic MCDU look: black bezel, monospace CRT-style text. This is a
+   fixed dark aesthetic (like the real hardware) rather than something that
+   follows OS light/dark mode. */
+
+/* B612 Mono: the actual font Airbus commissioned (via Intactile DESIGN /
+   ENAC, 2012) for aircraft cockpit displays, released open source (SIL OFL)
+   under the Eclipse Polarsys project — not a generic lookalike. Bundled
+   locally in fonts/ (see fonts/OFL.txt) rather than pulled from Google
+   Fonts, so this keeps working with no internet access. Only the regular
+   weight is used: the CDU's "large" style bit is a size difference on the
+   real display, not a bold one — see .ch.large below. */
+@font-face {
+  font-family: "B612 Mono";
+  src: url("../fonts/B612Mono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bezel: #1e1f22;
+  --screen-bg: #0a0d0a;
+  --key-bg: #2b2d30;
+  --key-bg-active: #45484d;
+  --key-text: #e7e7e7;
+  --key-unresolved: #6b2b2b;
+
+  --c-black: #0a0d0a;
+  --c-cyan: #37e6e6;
+  --c-red: #ff4d4d;
+  --c-yellow: #f5e642;
+  --c-green: #39d353;
+  --c-magenta: #ff7ad1;
+  --c-amber: #ffb84d;
+  --c-white: #e8e8e8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--bezel);
+  color: var(--key-text);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100vh;
+}
+
+/* ---------------------------------------------------------- connection --- */
+
+.connection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  background: #1f2023;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.connection-bar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.connection-bar select {
+  background: #101113;
+  border: 1px solid #3a3b3e;
+  color: var(--key-text);
+  border-radius: 4px;
+  padding: 4px 6px;
+  width: 9em;
+}
+
+.connection-bar button {
+  background: #3b6fd4;
+  border: none;
+  color: white;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.connection-bar button:disabled { opacity: 0.6; cursor: default; }
+
+/* Small persistent control to hide/show .connection-bar (see app.js), for
+   using the app full-screen on a tablet without the setup UI taking up
+   space once you're actually connected and flying. Fixed position, not
+   inside .connection-bar itself, so it stays reachable even when the bar
+   is hidden — otherwise there'd be no way to bring it back. */
+.bar-toggle {
+  position: fixed;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #3a3b3e;
+  border-radius: 4px;
+  background: #1f2023;
+  color: var(--key-text);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* Sits to the left of .bar-toggle, same size — two small fixed controls in
+   the corner rather than folding this into the hide-bar button, since
+   full screen and hiding the connection bar are independent states. */
+.fullscreen-toggle {
+  right: 34px;
+  font-size: 13px;
+}
+body.bar-hidden .connection-bar { display: none; }
+
+.status { margin-left: auto; font-size: 0.85rem; padding: 3px 8px; border-radius: 4px; }
+.status-closed { background: #3a3b3e; }
+.status-connecting { background: #6b5b1f; }
+.status-open { background: #1f6b3a; }
+.status-error { background: #6b1f1f; }
+
+/* ------------------------------------------------------------- screen --- */
+
+.mcdu-unit {
+  display: grid;
+  /* auto, not 1fr: the middle (screen) column should be exactly as wide as
+     the screen needs, not "whatever's left" — otherwise the lsk columns
+     stay pinned to the far edges of a wide track while the screen (now
+     correctly content-sized, see below) centers within it, opening a big
+     gap between the lsk buttons and the screen they're meant to sit next
+     to. justify-content then centers the resulting compact 3-column row
+     as a whole within the page. */
+  grid-template-columns: auto auto auto;
+  justify-content: center;
+  gap: 6px;
+  align-items: stretch;
+  max-width: 900px;
+  margin: 50px auto 0;
+  width: 100%;
+}
+
+.mcdu-screen {
+  background: var(--screen-bg);
+  border-radius: 6px;
+  padding: 10px 14px;
+  /* Sunken/debossed look for the display glass itself — same inset-shadow
+     logic as the key deboss theme (dark shadow offset toward bottom-right
+     reads as a bowl lit from the top-left; faint light counter-shadow is
+     the near inside edge catching a little of that light), plus the same
+     soft outer ring the keys got, so the screen reads as part of the same
+     "socketed into the panel" visual language rather than a separate
+     treatment. Always on — unlike the key styles, this isn't tied to the
+     Flat/Bevel/Deboss selector, since the screen isn't part of that
+     per-key theming at all. */
+  box-shadow:
+    inset 5px 5px 14px rgba(0, 0, 0, 0.9),
+    inset 10px 10px 26px rgba(0, 0, 0, 0.55),
+    inset -4px -4px 12px rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.6);
+  display: grid;
+  /* 24 fixed-width columns shared by every row (see .mcdu-row below) so a
+     row mixing "large" and "small" characters — the title line, almost
+     always — doesn't throw off column alignment against other rows. Each
+     cell's own font-size no longer affects its width, matching how the
+     real CDU's column grid stays fixed regardless of character size.
+     Sized in `ch` (tied to this element's own font, set to match .ch's
+     base size below) rather than `fr` (which would stretch columns to
+     fill whatever width the bezel happens to have, spacing characters
+     out much wider than a real display ever does). justify-content
+     centers the resulting content-width block in the bezel. */
+  --mcdu-char-size: clamp(10px, 2.6vw, 20px);
+  --mcdu-char-size-large: clamp(12px, 3.2vw, 24px);
+  font-family: "B612 Mono", ui-monospace, "DejaVu Sans Mono", "Courier New", monospace;
+  font-size: var(--mcdu-char-size);
+  grid-template-columns: repeat(24, 1ch);
+  /* Fixed row height (not `auto`, which sizes each row to its own content
+     — a row's height would then depend on whether anything in it
+     currently has the "large" style bit, e.g. the scratchpad only goes
+     large while you're typing into it, making the screen's total height
+     shift depending on content). Pitched to the small/typical size, not
+     the large one: large is only ~20% bigger and used sparingly (title,
+     an active scratchpad, ...), so sizing every row for the rare large
+     case made the whole screen noticeably taller than it should be. A
+     large character just overflows its row slightly instead (already
+     permitted by .ch's overflow:visible below), which is a closer match
+     to a real fixed-pitch display than an oversized, mostly-empty row. */
+  grid-auto-rows: calc(var(--mcdu-char-size) * 1.15);
+  justify-content: center;
+  row-gap: clamp(1px, 0.4vw, 4px);
+  /* Visual letter-spacing for the screen. Not the letter-spacing property:
+     each character lives in its own isolated grid cell (24 columns, no
+     shared text run), so letter-spacing wouldn't reliably add visible
+     space between adjacent characters the way it would in normal text.
+     column-gap is the equivalent that actually works for a per-cell
+     grid — real space inserted between every column. */
+  column-gap: 1px;
+  overflow: hidden;
+}
+/* The grey panel body has its own recess the screen sits in — like an old
+   CRT/TV bezel — separate from the screen glass's own debossing above.
+   This is a real wrapper element (.mcdu-screen-frame in index.html)
+   rather than a pseudo-element bleeding outward from .mcdu-screen itself,
+   because .mcdu-screen has overflow:hidden (needed for its own text
+   clipping), which would clip a pseudo-element trying to extend past its
+   bounds regardless of stacking order. A real wrapper needs no z-index
+   trickery either: normal parent/child paint order already puts it behind
+   the screen. margin exactly cancels padding so this element's footprint
+   in the grid (what .mcdu-unit's stretch-driven height, and therefore the
+   lsk rails' tuned vertical positioning, sees) is unchanged — the padding
+   still *renders* larger, margin only affects layout math, not painting. */
+.mcdu-screen-frame {
+  padding: 8px 20px;
+  margin: -8px -20px;
+  border-radius: 10px;
+  /* A single uniform inset shadow can't really fake a recessed frame
+     convincingly, because a real one doesn't have uniform shading — each
+     of the 4 walls catches light differently depending on which way it
+     faces. This layers 4 independent graduated gradients, one per edge
+     (top/bottom darker, left/right lighter), each sized to roughly the
+     padding on that side so it fills the visible recess, plus a thin
+     crisp ring for edge definition. Order matters: first-listed paints on
+     top, so the ring goes last (bottom) and the base color goes very last
+     (under everything). The light side is intentionally more subtle than
+     the dark side, not perfectly symmetric. */
+  background:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0) 10px) top / 100% 10px,
+    linear-gradient(to top, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0) 10px) bottom / 100% 10px,
+    linear-gradient(to right, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 22px) left / 22px 100%,
+    linear-gradient(to left, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 22px) right / 22px 100%,
+    var(--bezel);
+  background-repeat: no-repeat;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.mcdu-row {
+  /* No box of its own: its .ch children become direct grid items of
+     .mcdu-screen, so they share its column tracks instead of each row
+     laying itself out independently. */
+  display: contents;
+}
+
+.ch {
+  font-family: "B612 Mono", ui-monospace, "DejaVu Sans Mono", "Courier New", monospace;
+  font-size: var(--mcdu-char-size);
+  line-height: 1.15;
+  min-width: 0; /* don't let a wide glyph force its grid track wider than the rest */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible; /* "large" characters can render past their own cell without being clipped */
+  white-space: pre;
+}
+/* The style byte's "large" bit is a size difference on the real display,
+   not a weight difference — both render at regular weight. */
+.ch.large { font-size: var(--mcdu-char-size-large); }
+.ch.underline { text-decoration: underline; }
+.ch.flash { animation: mcdu-flash 1s steps(1) infinite; }
+@keyframes mcdu-flash { 50% { opacity: 0; } }
+
+.ch.color-black   { color: var(--c-black); }
+.ch.color-cyan    { color: var(--c-cyan); }
+.ch.color-red     { color: var(--c-red); }
+.ch.color-yellow  { color: var(--c-yellow); }
+.ch.color-green   { color: var(--c-green); }
+.ch.color-magenta { color: var(--c-magenta); }
+.ch.color-amber   { color: var(--c-amber); }
+.ch.color-white   { color: var(--c-white); }
+
+.ch.reverse { color: black; border-radius: 2px; }
+.ch.reverse.color-black   { background: var(--c-black); }
+.ch.reverse.color-cyan    { background: var(--c-cyan); }
+.ch.reverse.color-red     { background: var(--c-red); }
+.ch.reverse.color-yellow  { background: var(--c-yellow); }
+.ch.reverse.color-green   { background: var(--c-green); }
+.ch.reverse.color-magenta { background: var(--c-magenta); }
+.ch.reverse.color-amber   { background: var(--c-amber); }
+.ch.reverse.color-white   { background: var(--c-white); }
+
+/* -------------------------------------------------------------- keys --- */
+
+.mcdu-lsk-column {
+  /* .mcdu-unit's `align-items: stretch` gives this column the same total
+     height as .mcdu-screen, so it's a valid `top: %` reference for
+     absolutely-positioned LSK buttons below — each one placed at a
+     percentage of that height computed in mcdu-keypad.js#renderLskColumn,
+     tuned to approximate the screen's real (not perfectly uniform) row
+     positions. Explicit width because absolutely-positioned children don't
+     contribute to their container's auto width — without this the column
+     collapses toward 0 and the (fixed-width) buttons spill over onto the
+     screen next to it. Kept in sync with .mcdu-key's width below. */
+  position: relative;
+  width: 36px;
+  padding: 10px 0;
+}
+
+/* The keypad below the screen is 4 independent blocks — function keys,
+   utility (AIRPORT + arrows), numeric, alpha — not one grid, because on
+   the real bezel they're differently shaped *and* differently styled
+   (circular numeric keys vs square alpha keys vs wider rectangular
+   function/utility keys). They still need to visually align (e.g. AIRPORT
+   directly under DIR), which works here without a shared grid because
+   every block uses the same --mcdu-key-size and gap, and none of them are
+   independently centered — .mcdu-keypad is the only thing centered on the
+   page; everything inside it is flush left, so equal-width columns land
+   in the same place across blocks "for free". */
+.mcdu-keypad {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: fit-content;
+  margin: 0 auto;
+}
+.mcdu-keypad-lower {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.mcdu-keypad-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* One block's explicit row/column grid, driven by
+   mcdu-keypad.js#renderLayoutGrid — each button's grid-row/grid-column is
+   set inline by JS to match a photo of the real bezel, so this rule just
+   needs the right column count. Columns/rows are a fixed key size
+   (--mcdu-key-width/-height, not `1fr` — same fix as the screen's column
+   sizing: `1fr` stretches every button to fill whatever width the
+   container happens to have, instead of a real keycap's fixed small size.
+   Width/height are separate custom properties (both defaulting to
+   --mcdu-key-size, which also still drives font-size) so a block can be
+   non-square — see .mcdu-block-menu below — without needing a whole
+   parallel set of rules. */
+.mcdu-layout-grid {
+  --mcdu-key-size: clamp(28px, 5.5vw, 42px);
+  --mcdu-key-width: var(--mcdu-key-size);
+  --mcdu-key-height: var(--mcdu-key-size);
+  display: grid;
+  grid-template-columns: repeat(var(--mcdu-grid-cols), var(--mcdu-key-width));
+  grid-auto-rows: var(--mcdu-key-height);
+  gap: 6px;
+}
+/* Function/utility ("menu") keys are noticeably wider-pitched than
+   alpha/numeric keys on the real bezel (~98px vs ~84px in the reference
+   photo) — this is what actually brings alphaBlock into alignment with
+   functionBlock, not identical key sizes everywhere. Two classes for
+   specificity over .mcdu-layout-grid's own --mcdu-key-size, not source
+   order, so this doesn't depend on the JS-added class landing after it. */
+.mcdu-layout-grid.mcdu-block-menu {
+  --mcdu-key-size: clamp(32px, 6.4vw, 48px);
+  --mcdu-key-width: calc(var(--mcdu-key-size) + 6px);
+  --mcdu-key-height: calc(var(--mcdu-key-size) - 5px);
+}
+.mcdu-layout-grid.mcdu-block-alpha {
+  gap: 11px;
+  padding: 20px 0 0 20px; /* top and left only */
+}
+
+/* Cosmetic base shared by every keycap, real or decorative. Sizing is
+   scoped separately below since the layout grids (fixed square-ish cells)
+   and the lsk rails (fixed wide-but-short cells, in a flex column) need
+   different width/height, not a single one-size-fits-all rule. */
+.mcdu-key, .mcdu-key-decorative {
+  position: relative; /* positioning context for the deboss theme's ::after indent, unused otherwise */
+  background: var(--key-bg);
+  color: var(--key-text);
+  border: none;
+  /* A soft blurred ring instead of a crisp border — reads as the key
+     sitting in a cutout ("button hole") in the panel rather than just
+     having an edge drawn around it. Follows whatever border-radius is in
+     effect (round, pill, ...) automatically, unlike a border it doesn't
+     need separate handling per shape. Bevel overrides this with its own,
+     stronger box-shadow; flat and deboss both keep it. */
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 4px 1px rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  padding: 0;
+  line-height: 1.15;
+  font-weight: 600;
+  white-space: pre-line;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+.mcdu-key:active, .mcdu-key.pressed { background: var(--key-bg-active); }
+.mcdu-key:disabled { opacity: 0.45; cursor: not-allowed; }
+.mcdu-key.unresolved { outline: 1px dashed var(--key-unresolved); }
+
+/* Two different "no key" cases in keypadLayout: "" is a real keycap shape
+   on the bezel that's just unlabeled and does nothing (e.g. next to
+   AIRPORT); null is genuine empty bezel space between clusters (e.g. the
+   gap before the alpha grid) — present as an invisible placeholder purely
+   to keep the grid's row/column alignment intact. */
+.mcdu-key-decorative { cursor: default; pointer-events: none; }
+.mcdu-key-blank { visibility: hidden; }
+
+.mcdu-layout-grid .mcdu-key,
+.mcdu-layout-grid .mcdu-key-decorative {
+  width: 100%;
+  height: 100%;
+  font-size: calc(var(--mcdu-key-size) * 0.26);
+}
+.mcdu-block-alpha .mcdu-key,
+.mcdu-block-alpha .mcdu-key-decorative {
+  font-size: calc(var(--mcdu-key-size) * 0.26 + 10px);
+  padding: 2px;
+}
+/* OVFY's label ("OVFY" + a Δ symbol) is more crowded than a single
+   character, so it gets a smaller font than the rest of the alpha block. */
+.mcdu-block-alpha .mcdu-key[data-key="OVERFLY"] {
+  font-size: calc(var(--mcdu-key-size) * 0.26 + 2px);
+}
+/* SP and CLR intentionally use a smaller font than the rest of the alpha
+   block, unlike single-character keys which read fine larger. */
+.mcdu-block-alpha .mcdu-key[data-key="SP"],
+.mcdu-block-alpha .mcdu-key[data-key="CLR"] {
+  font-size: calc(var(--mcdu-key-size) * 0.26 + 6px);
+}
+
+/* Numeric keypad is round on the real bezel, unlike every other block. */
+.mcdu-block-numeric .mcdu-key {
+  border-radius: 50%;
+}
+.mcdu-block-numeric .mcdu-key,
+.mcdu-block-numeric .mcdu-key-decorative {
+  font-size: calc(var(--mcdu-key-size) * 0.26 + 10px); /* matches alphaBlock's general size */
+}
+
+.mcdu-lsk-column .mcdu-key {
+  /* top: % is set inline per-button by mcdu-keypad.js#renderLskColumn;
+     left/transform center the fixed-size button on that point.
+     left itself is set per-column right below, not here: L and R need to
+     shift in opposite directions (away from the screen) to clear space
+     for the screen's new debossed shadow, which bleeds a few px outward
+     past its actual edge. */
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 22px;
+  font-size: 12px;
+}
+/* Away from the screen: left column shifts left, right column shifts
+   right. The screen sits between them, so "away" is opposite directions. */
+#mcdu-lsk-left .mcdu-key { left: 1%; }
+#mcdu-lsk-right .mcdu-key { left: 99%; }
+/* The "unlabeled dash" real LSK keys have, drawn as a bar rather than a
+   dash character (mcdu-keypad.js leaves these labels empty) so its width
+   is an exact percentage of the button, not whatever a font glyph happens
+   to measure. ::before, not ::after, so it doesn't collide with the
+   deboss theme's ::after indent on these same buttons — the bar just
+   shows through the (shadow-only, transparent-centered) indent. */
+.mcdu-lsk-column .mcdu-key::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  height: 3px;
+  background: currentColor;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------- theme: bevel --- */
+/* Optional 3D beveled look with backlit-red glowing labels, closer to a
+   physical MCDU's molded/backlit keycaps than the flat default — the
+   keys' *shapes* actually change here (round/pill), unlike the sibling
+   "deboss" theme below, which keeps the default shapes and adds a sunken
+   indent instead. Picked via "Key style" in the connection bar
+   (persisted — see app.js), which sets body[data-theme]. Every rule below
+   only fires inside body[data-theme="bevel"], so switching to "Flat" (or
+   "Deboss") is a full, clean fallback — nothing here touches sizing or
+   DOM structure. */
+
+body[data-theme="bevel"] .mcdu-key,
+body[data-theme="bevel"] .mcdu-key-decorative {
+  border: none;
+  background: radial-gradient(circle at 35% 22%, #55585f 0%, #2c2e33 55%, #17181a 100%);
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.2),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.6),
+    0 2px 3px rgba(0, 0, 0, 0.55);
+}
+body[data-theme="bevel"] .mcdu-key:active,
+body[data-theme="bevel"] .mcdu-key.pressed {
+  background: radial-gradient(circle at 35% 22%, #3a3c42 0%, #1c1d20 60%, #101112 100%);
+  box-shadow:
+    inset 0 3px 5px rgba(0, 0, 0, 0.7),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.06);
+}
+body[data-theme="bevel"] .mcdu-key:disabled {
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.08),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Circular: alpha + numeric keys. (Numeric is already round even in the
+   default theme — see .mcdu-block-numeric .mcdu-key earlier — this is what
+   additionally rounds alpha, plus layers the 3D shading from above onto
+   both.) */
+body[data-theme="bevel"] .mcdu-block-alpha .mcdu-key,
+body[data-theme="bevel"] .mcdu-block-alpha .mcdu-key-decorative,
+body[data-theme="bevel"] .mcdu-block-numeric .mcdu-key,
+body[data-theme="bevel"] .mcdu-block-numeric .mcdu-key-decorative {
+  border-radius: 50%;
+}
+
+/* "Barrel": function/utility keys and the lsk rails — a wide pill shape
+   with a banded (not radial) gradient, so the shading reads as a rounded
+   cylindrical cross-section rather than a sphere. The dark band around the
+   middle is the "seam" where a barrel's curvature is most side-on to the
+   light; it's what sells the roundness on a wide, short shape. */
+body[data-theme="bevel"] .mcdu-block-menu .mcdu-key,
+body[data-theme="bevel"] .mcdu-block-menu .mcdu-key-decorative,
+body[data-theme="bevel"] .mcdu-lsk-column .mcdu-key {
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    #5c5f66 0%,
+    #2c2e33 38%,
+    #151617 50%,
+    #2c2e33 62%,
+    #45474d 100%
+  );
+}
+body[data-theme="bevel"] .mcdu-block-menu .mcdu-key:active,
+body[data-theme="bevel"] .mcdu-block-menu .mcdu-key.pressed,
+body[data-theme="bevel"] .mcdu-lsk-column .mcdu-key:active,
+body[data-theme="bevel"] .mcdu-lsk-column .mcdu-key.pressed {
+  background: linear-gradient(
+    180deg,
+    #303236 0%,
+    #1a1b1d 38%,
+    #0c0d0e 50%,
+    #1a1b1d 62%,
+    #26282b 100%
+  );
+}
+
+/* Backlit-red glow on the label text, like LED bleed through a keycap
+   legend — the character stays a warm off-white; the glow does the red. */
+body[data-theme="bevel"] .mcdu-key {
+  color: #fff4f0;
+  text-shadow:
+    0 0 3px rgba(255, 70, 45, 0.95),
+    0 0 7px rgba(255, 35, 15, 0.65),
+    0 0 14px rgba(210, 15, 5, 0.35);
+}
+/* The lsk rail's dash is a background-color bar (see .mcdu-lsk-column
+   .mcdu-key::before above), not text — text-shadow doesn't reach it, so it
+   needs its own box-shadow glow to match. It already inherits the warm
+   off-white fill via currentColor from the rule above. */
+body[data-theme="bevel"] .mcdu-lsk-column .mcdu-key::before {
+  box-shadow:
+    0 0 3px rgba(255, 70, 45, 0.95),
+    0 0 7px rgba(255, 35, 15, 0.65),
+    0 0 14px rgba(210, 15, 5, 0.35);
+}
+
+/* --------------------------------------------------- theme: deboss --- */
+/* Optional engraved look: unlike "bevel" above, every key keeps its
+   default *shape* (same border-radius per block, function keys stay
+   rectangular) — what's added is a sunken circular or pill-shaped indent
+   on the key's face via a ::after pseudo-element, closer to how a real
+   MCDU keycap is molded: a normal keycap silhouette with a recessed
+   circular/oval actuation area, rather than the whole key being round.
+   .mcdu-key already has `position: relative` (see the cosmetic base
+   rule above) purely so this ::after has something to center against;
+   that's a no-op in the other two themes. */
+
+body[data-theme="deboss"] .mcdu-key::after,
+body[data-theme="deboss"] .mcdu-key-decorative::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  /* Inset dark shadow offset toward the bottom-right reads as a sunken
+     bowl lit from the top-left; the faint light counter-shadow is the
+     opposite (near) inside edge catching a little of that same light —
+     same physical logic as the bevel theme's shading, just inverted and
+     confined to a small indent instead of the whole key. Blur is large
+     relative to the offset on purpose, for a gradual/soft slope into the
+     indent rather than a hard-edged groove. */
+  box-shadow:
+    inset 3px 3px 9px rgba(0, 0, 0, 0.45),
+    inset -2px -2px 7px rgba(255, 255, 255, 0.06);
+}
+
+/* Circular indent: alpha + numeric keys. */
+body[data-theme="deboss"] .mcdu-block-alpha .mcdu-key::after,
+body[data-theme="deboss"] .mcdu-block-alpha .mcdu-key-decorative::after,
+body[data-theme="deboss"] .mcdu-block-numeric .mcdu-key::after,
+body[data-theme="deboss"] .mcdu-block-numeric .mcdu-key-decorative::after {
+  inset: 5%;
+  border-radius: 50%;
+}
+
+/* "Barrel" indent: function/utility keys and the lsk rails — a short wide
+   pill sunk into the key's own unchanged rectangular silhouette. */
+body[data-theme="deboss"] .mcdu-block-menu .mcdu-key::after,
+body[data-theme="deboss"] .mcdu-block-menu .mcdu-key-decorative::after,
+body[data-theme="deboss"] .mcdu-lsk-column .mcdu-key::after {
+  inset: 4% 1%;
+  border-radius: 999px;
+}
+
+/* Same backlit-red label glow as the bevel theme. */
+body[data-theme="deboss"] .mcdu-key {
+  color: #fff4f0;
+  text-shadow:
+    0 0 3px rgba(255, 70, 45, 0.95),
+    0 0 7px rgba(255, 35, 15, 0.65),
+    0 0 14px rgba(210, 15, 5, 0.35);
+}
+/* Same reasoning as the bevel theme: the lsk dash is a background bar, not
+   text, so it needs its own box-shadow glow instead of inheriting text-shadow. */
+body[data-theme="deboss"] .mcdu-lsk-column .mcdu-key::before {
+  box-shadow:
+    0 0 3px rgba(255, 70, 45, 0.95),
+    0 0 7px rgba(255, 35, 15, 0.65),
+    0 0 14px rgba(210, 15, 5, 0.35);
+}
+
+/* ------------------------------------------------------------ mobile --- */
+
+@media (max-width: 600px) {
+  .mcdu-lower-keypad { grid-template-columns: 1fr; }
+  .mcdu-lsk-column { padding: 4px 0; }
+}
