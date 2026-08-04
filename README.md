@@ -1,4 +1,4 @@
-# xplane-mcdu-a333
+# X-Plane Web MCDU for Stock A330
 
 A web-based MCDU (CDU) for X-Plane 12's stock Airbus A330. It runs as a page
 in any browser and talks to X-Plane over the sim's built-in Web API — no
