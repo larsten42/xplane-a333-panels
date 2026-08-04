@@ -38,9 +38,17 @@ ships one verified profile.
 
 ## Getting started
 
+[**Download the latest release**](https://github.com/larsten42/xplane-mcdu-a333/releases/latest/download/xplane-mcdu-a333.zip)
+and unzip it, or clone the repo:
+
 ```sh
 git clone https://github.com/larsten42/xplane-mcdu-a333.git
 cd xplane-mcdu-a333
+```
+
+Either way, then:
+
+```sh
 node tools/mcdu-server.js
 ```
 
