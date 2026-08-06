@@ -18,14 +18,28 @@ const DIST = path.join(ROOT, "dist");
 const INCLUDE = [
   "index.html",
   "css/mcdu.css",
+  "css/efis.css",
   "fonts/B612Mono-Regular.ttf",
+  "fonts/B612-Regular.ttf",
+  "fonts/B612-Bold.ttf",
   "fonts/OFL.txt",
+  "fonts/DSEG7Modern-Bold.ttf",
+  "fonts/DSEG-OFL.txt",
   "config/profiles/default-fms.json",
+  "config/profiles/efis-a333.json",
   "src/app.js",
   "src/mcdu-adapter.js",
   "src/mcdu-keypad.js",
   "src/mcdu-screen.js",
   "src/xplane-client.js",
+  "src/efis-adapter.js",
+  "src/efis-panel.js",
+  "src/readout-formats.js",
+  "src/rotary-encoder.js",
+  "src/rotary-scale.js",
+  "src/compass-scale.js",
+  "src/arc-toggle.js",
+  "src/detent-angles.js",
   "tools/mcdu-server.js",
 ];
 
@@ -42,4 +56,4 @@ for (const rel of INCLUDE) {
 
 console.log(`Wrote ${INCLUDE.length} files (${(totalBytes / 1024).toFixed(0)} KB) to ${DIST}`);
 console.log("Zip that folder — e.g.:");
-console.log(`  cd ${ROOT} && zip -r mcdu-release.zip dist`);
+console.log(`  cd ${ROOT} && zip -r xplane-a333-panels.zip dist`);

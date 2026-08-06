@@ -1,0 +1,521 @@
+/* Styling for the EFIS panel — shares the page (index.html), connection
+   bar, and page chrome (body, .connection-bar, .status, B612 Mono) with
+   mcdu.css, which is loaded alongside this on every page; this file only
+   has rules for content actually specific to the EFIS panel itself. */
+
+/* DSEG7 (Modern, Bold) — a seven-segment digital-display font, for the
+   QNH window here and the FCU's speed/heading/altitude/V-S windows later.
+   SIL Open Font License, same family as mcdu.css's B612 Mono. Bundled
+   locally in fonts/ rather than pulled from a CDN for the same reason —
+   see fonts/DSEG-OFL.txt for the license. */
+@font-face {
+  font-family: "DSEG7 Modern";
+  src: url("../fonts/DSEG7Modern-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  /* Same tight/medium/soft glow falloff as the MCDU keys' backlit-label
+     glow (see body[data-theme="bevel"/"deboss"] .mcdu-key in mcdu.css),
+     recolored to the QNH window's own amber instead of keycap red. */
+  --efis-amber-glow: 0 0 3px rgba(240, 180, 41, 0.9), 0 0 7px rgba(240, 180, 41, 0.6),
+    0 0 14px rgba(240, 180, 41, 0.35);
+}
+
+.efis-layout {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+  width: fit-content; /* hug the two columns' actual content, not a fixed width that leaves empty space */
+  padding: 26px 28px;
+  box-sizing: border-box; /* padding counts toward the fit-content width instead of growing past it */
+  border-radius: 12px;
+  background: linear-gradient(168deg, #33405a 0%, #263145 38%, #1d2637 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.5),
+    0 22px 48px rgba(0, 0, 0, 0.6);
+  border: 1px solid #131926;
+}
+.efis-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+/* Baro/FD-LS column sits visually higher than the ND mode/range + BRG
+   column (that one already has its own internal negative margins pulling
+   things up) — nudged down to balance against it. */
+.efis-layout > .efis-col:first-child {
+  margin-top: 50px;
+}
+.efis-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.efis-group-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+/* Both the mode/range knobs above and the bearing-selector rings below
+   reserve generous safety margins inside their own SVG canvases (to avoid
+   clipping labels — see rotary-scale.js/compass-scale.js), which compound
+   with .efis-col's own 20px gap into a lot of visually empty space
+   between the two rows. Pulled back specifically here rather than
+   shrinking that shared gap, since nd-row → selectors spacing above
+   wasn't reported as a problem. */
+[data-group="brg"] {
+  margin-top: -70px;
+}
+/* QNH readout + baro knob otherwise share .efis-group's default 10px gap,
+   which reads as cramped once the knob has its own arc/pointer sitting
+   right above it — a little more room just for this pair. */
+[data-group="baro"] {
+  gap: 22px;
+}
+
+/* MODE/RANGE and BRG1/BRG2 need to land on the same two horizontal
+   centers so each knob sits directly above its matching toggle, but their
+   containers are different sizes (190px vs the shrunk 130px toggle
+   containers) — flex + justify-content:center alone doesn't guarantee
+   that once row widths differ, since each row would just center its own
+   (different) total width independently. A shared fixed-width 2-column
+   grid does, since both rows get identical column boundaries regardless
+   of how much either item actually needs. */
+[data-group="selectors"],
+[data-group="brg"] {
+  display: grid;
+  grid-template-columns: 190px 190px;
+  justify-items: center;
+  gap: 10px;
+}
+
+.efis-button {
+  min-width: 64px;
+  padding: 12px 10px;
+  background: #2a2b2f;
+  color: #aab;
+  border: 1px solid #444;
+  border-radius: 6px;
+  font-size: 15px;
+  font-family: "B612", sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+}
+.efis-button:hover:not(:disabled) {
+  background: #34363b;
+}
+.efis-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.efis-button.lit {
+  background: #2e4d2e;
+  color: #9fe89f;
+  border-color: #4a8f4a;
+}
+
+/* Real Airbus "legend switch" look: rectangular, wider than tall, a
+   separate on/off indicator segment above the label rather than the label
+   itself changing color. The button-hole ring (the two outer box-shadow
+   layers) matches .mcdu-key in mcdu.css exactly, for visual consistency
+   between the two panels; the inset layers on top of that are what read
+   as an embossed/raised cap rather than a flat rectangle. */
+.efis-legend-button {
+  position: relative;
+  width: 72px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #4a4c52 0%, #2b2d30 55%, #232427 100%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 4px 1px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.45);
+}
+.efis-legend-button:hover:not(:disabled) {
+  background: linear-gradient(160deg, #54565c 0%, #34363b 55%, #2a2b2f 100%);
+}
+.efis-legend-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 2px 4px rgba(0, 0, 0, 0.55);
+}
+.efis-legend-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.efis-legend-indicator {
+  height: 40%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* The actual on/off "light" is an inset rectangle within its 40%-tall
+   slot, not edge-to-edge — a pseudo-element keeps that a pure CSS change,
+   no DOM/JS involved. The real Airbus indicator isn't one solid block
+   either — it's 3 horizontal bars with a hairline gap between them — so
+   this bands the fill color with a striped gradient rather than a flat
+   background, revealing the button's own dark material in the gaps. */
+.efis-legend-indicator::after {
+  content: "";
+  width: 65%;
+  height: 60%;
+  border-radius: 2px;
+  /* Gap color explicit rather than transparent in both states — showing
+     the button's own (lighter) material through the gap read as too much
+     contrast against the bars either way. Off: gap darker than the bars.
+     Lit: gap lighter than the background but still clearly darker than
+     the bright bars. */
+  background: linear-gradient(
+    to bottom,
+    #1a1c1a 0%, #1a1c1a 28%,
+    #0b0c0b 28%, #0b0c0b 36%,
+    #1a1c1a 36%, #1a1c1a 64%,
+    #0b0c0b 64%, #0b0c0b 72%,
+    #1a1c1a 72%, #1a1c1a 100%
+  );
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.efis-legend-button.lit .efis-legend-indicator::after {
+  background: linear-gradient(
+    to bottom,
+    #2ecc40 0%, #2ecc40 28%,
+    #1e7a30 28%, #1e7a30 36%,
+    #2ecc40 36%, #2ecc40 64%,
+    #1e7a30 64%, #1e7a30 72%,
+    #2ecc40 72%, #2ecc40 100%
+  );
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.25),
+    0 0 6px 1px rgba(46, 204, 64, 0.55);
+}
+
+.efis-legend-label {
+  height: 60%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #ccc;
+  font-family: "B612", sans-serif;
+}
+
+.efis-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  width: 139px; /* fixed, not min — "1015"/"29.92"/"STD" shouldn't resize the box as the reading changes; 116px * 1.2, wide enough for "29.92" at the value's 31px font size */
+  min-height: 58px;
+  padding: 5px 12px;
+  background: #000;
+  border: none;
+  border-radius: 7px;
+  box-sizing: border-box;
+  /* Same sunken-glass logic as .mcdu-screen in mcdu.css (dark shadow
+     toward bottom-right = light from top-left, faint light counter-shadow
+     top-left = the near inside edge catching a little of it), just scaled
+     way down for a box this small — copying mcdu.css's actual pixel
+     values here would read as a crater, not a subtle deboss. The last
+     layer is a couple-px bezel ring standing in for the border this
+     replaced. */
+  box-shadow:
+    inset 2px 2px 4px rgba(0, 0, 0, 0.8),
+    inset -1px -1px 2px rgba(255, 255, 255, 0.06),
+    0 0 0 2px #333;
+}
+.efis-readout-label {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: "B612 Mono", monospace;
+  letter-spacing: 0.05em;
+  color: #f0b429; /* same amber as the value, not the old grey */
+  line-height: 1;
+  text-shadow: var(--efis-amber-glow);
+}
+.efis-readout-value {
+  font-family: "DSEG7 Modern", ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 31px;
+  /* DSEG fonts render taller than their nominal em-box — line-height: 1
+     was clipping the top segment off "S" in "STD" (didn't show up on
+     plain digits, whose glyphs apparently sit lower in the font's own
+     metrics). More room, not a hard clip anywhere, is the actual fix. */
+  line-height: 1.3;
+  color: #f0b429; /* real QNH window is amber segmented-LCD, per reference_efis_l.jpg */
+  text-shadow: var(--efis-amber-glow);
+}
+
+.rotary-encoder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* The scale SVG (140x140, absolutely positioned) is bigger than the knob
+   itself — without reserving room for it, the flex layout only accounts
+   for the knob's own size, so the scale visually overflows into
+   neighboring elements instead of getting its own safe area. Only applies
+   to encoders that actually have a scale (mode, range) — baro's plain
+   knob shouldn't get the extra space it doesn't need. Extra +50px beyond
+   the SVG's own 140px: the label text (e.g. "320") can extend a little
+   past the SVG's own edge, which was clipping on the right otherwise. */
+.rotary-encoder-has-scale {
+  min-width: 190px;
+  min-height: 190px;
+}
+/* Baro's plain knob has no scale, but does have the small in Hg/hPa arc
+   (see .arc-toggle below) sitting just outside it — same reasoning as
+   rotary-encoder-has-scale: without a safe area, the arc's labels overflow
+   into whatever sits next to the knob. Unlike rotary-encoder-has-scale,
+   this arc only ever occupies the top half (330°-30°, nothing below the
+   knob) — centering the knob in a symmetric box would waste as much space
+   below it as it reserves above, which is what was pushing everything
+   after baro in the column further down than necessary. Anchoring the
+   knob to the bottom of the box (align-items: flex-end) and only reserving
+   height above it fixes that; .arc-toggle's own position gets a matching
+   override just below so it still lands centered on the knob rather than
+   the now-taller box. */
+.rotary-encoder-has-unit-arc {
+  min-width: 140px;
+  min-height: 105px;
+  align-items: flex-end;
+}
+.rotary-encoder-has-unit-arc .arc-toggle {
+  top: calc(100% - 32px); /* 32px = half the knob's own 64px height, i.e. its vertical center */
+}
+.rotary-scale-wrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.rotary-scale-arc {
+  fill: none;
+  stroke: #e8e8e8;
+  stroke-width: 2.2;
+}
+.rotary-scale-tick {
+  stroke: #e8e8e8;
+  stroke-width: 2.2;
+}
+.rotary-scale-label {
+  fill: #ccc;
+  font-size: 13px;
+  font-family: "B612", sans-serif; /* the non-mono cut — a printed panel legend, not CRT text */
+  font-weight: 700;
+}
+.rotary-encoder-knob {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #5a5d66, #2c2d31 70%);
+  border: 1px solid #555;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none; /* stop the browser from scrolling/zooming during drag */
+  user-select: none;
+  transition: transform 0.05s linear;
+}
+.rotary-encoder-knob.active {
+  cursor: grabbing;
+  box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.35), 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+/* The bearing-pointer selector's round base, scaled down to match its
+   halved ring (see compass-scale.js) — the lever itself (shaft/bulb) is
+   sized independently in fixed px, so this doesn't shrink it, just the
+   grey disc it's mounted on. */
+.rotary-encoder-knob-toggle-base {
+  width: 32px;
+  height: 32px;
+}
+.rotary-encoder-label {
+  font-size: 13px;
+  font-family: "B612 Mono", monospace;
+  line-height: 1.2;
+  text-align: center;
+  color: #ccc;
+  font-weight: 600;
+  pointer-events: none;
+  width: 46px;
+}
+
+/* Detent selectors (mode, range) get a pen/needle-shaped pointer instead
+   of a text label — pivoted at the knob's center, sharp end pointing
+   toward whichever position is currently selected. Top 30% of its length
+   tapers to a point, the remaining 70% stays a flat, uniform-width shaft. */
+.rotary-encoder-pointer {
+  position: absolute;
+  top: 2%;
+  left: 50%;
+  width: 44%;
+  height: 96%;
+  transform: translateX(-50%);
+  /* Same material as the knob itself (not a contrasting color) — the
+     raised look comes purely from the light-from-top-left / shadow-from-
+     bottom-right inset pair, like the rest of the knob's own emboss. */
+  background: linear-gradient(145deg, #5a5d66, #2c2d31 75%);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.25),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.5);
+  clip-path: polygon(50% 0%, 100% 30%, 100% 100%, 0% 100%, 0% 30%);
+  pointer-events: none;
+}
+/* A thin line down the sharp tip is what actually reads as "pointing at
+   something precise" — the tapered shape alone is too broad to tell
+   exactly where within it the true direction is. */
+.rotary-encoder-pointer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 32%;
+  transform: translateX(-50%);
+  background: #f2f2f2;
+}
+
+/* "Industrial toggle" pointer style — for switches that are physically
+   small toggles rather than a knob you turn (the bearing-pointer
+   selector). Two independent pieces rather than one rotated/skewed
+   shape: a shaft that scales from zero length (root = knob center, so
+   centered/OFF reads as "just a circle", like a real toggle pointing
+   straight at the viewer) and a bulb that only ever slides left/right —
+   see RotaryEncoder.setAngle() for why they can't share one transform. */
+.rotary-encoder-pointer-toggle-shaft {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px; /* keep in sync with TOGGLE_SHAFT_LENGTH_PX in rotary-encoder.js */
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 4px;
+  transform-origin: left center;
+  background: linear-gradient(145deg, #6a6d76, #2c2d31 75%);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, 0.25),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease;
+  pointer-events: none;
+}
+.rotary-encoder-pointer-toggle-bulb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #7d8089, #2c2d31 75%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 1px 1px 1px rgba(255, 255, 255, 0.3),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease;
+  pointer-events: none;
+}
+
+/* Bearing-pointer selector (ADF/OFF/VOR): same white-ring visual language
+   as the mode/range knobs (CompassScale — a full circle, since the 4th
+   quadrant carries the switch's own ID rather than being unused), but the
+   knob itself uses the "industrial toggle" pointer style above instead of
+   the flat pen shape — the real hardware is a small toggle switch, not a
+   knob you turn a long way. */
+.compass-switch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 130px; /* matches CompassScale's smaller 120px canvas + a little safety margin */
+  min-height: 130px;
+}
+.compass-scale {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.compass-scale-ring {
+  fill: none;
+  stroke: #e8e8e8;
+  stroke-width: 2.2;
+}
+.compass-scale-tick {
+  stroke: #e8e8e8;
+  stroke-width: 2.2;
+}
+.compass-scale-legend-label {
+  fill: #ccc;
+  font-size: 13px;
+  font-family: "B612", sans-serif;
+  font-weight: 700;
+}
+
+/* Baro's unit selector: a short stub arc just above the knob (330°-30°,
+   i.e. straddling north) with "in Hg" on the west end and "hPa" on the
+   east end, styled like RotaryScale's arc/tick/label (same stroke, same
+   label font) since it's the same "printed scale" visual language, just a
+   2-position stub instead of a wide sweep. Unlike the scale/ring above,
+   each label is its own click target that directly selects its unit (not
+   a drag-to-turn control), so pointer-events stays off for the arc/svg as
+   a whole and is switched back on only for the two labels. */
+.arc-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  overflow: visible;
+}
+.arc-toggle-arc {
+  fill: none;
+  stroke: #e8e8e8;
+  stroke-width: 2.2;
+}
+.arc-toggle-tick {
+  stroke: #e8e8e8;
+  stroke-width: 2.2;
+}
+.arc-toggle-label {
+  fill: #ccc;
+  font-size: 13px;
+  font-family: "B612", sans-serif;
+  font-weight: 700;
+}
+.arc-toggle-label-clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.arc-toggle-label-clickable:hover {
+  fill: #fff;
+}
+/* Stands in for the real hardware's small coaxial ring/knob that shows
+   which unit is currently selected — swung between the two ticks by
+   ArcToggle.setActive() rather than color-coding the label text. */
+.arc-toggle-pointer {
+  fill: #f2f2f2;
+  transition: transform 0.15s ease;
+}

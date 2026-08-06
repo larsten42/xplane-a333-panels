@@ -1,0 +1,79 @@
+name: Release
+
+# Pushing a version tag (e.g. v0.2.0) builds:
+#   - the existing zero-dependency zip (unzip + `node tools/mcdu-server.js`,
+#     needs Node installed — see build-release.mjs)
+#   - a single-file executable per OS (Windows/macOS/Linux) that embeds
+#     every static asset and needs no Node install at all — see
+#     tools/build-sea.mjs and Node's --build-sea (added in v25.5)
+# ...then attaches all of them to a GitHub Release for that tag.
+#
+# workflow_dispatch is there so this can be run by hand to sanity-check the
+# build without having to cut a real tag.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "26"
+
+permissions:
+  contents: write
+
+jobs:
+  build-sea:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: mcdu-server-linux-x64
+          - os: macos-latest
+            asset: mcdu-server-darwin-arm64
+          - os: windows-latest
+            asset: mcdu-server-win.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: node tools/build-sea.mjs dist-sea/${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist-sea/${{ matrix.asset }}
+
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm run build:release
+      - name: Zip dist/ (twice — a versioned name and a stable "latest" name, matching the existing release convention)
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          cd dist
+          zip -r "../xplane-a333-panels-${TAG}.zip" .
+          zip -r "../xplane-a333-panels.zip" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zips
+          path: xplane-a333-panels*.zip
+
+  release:
+    needs: [build-sea, build-zip]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

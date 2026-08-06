@@ -1,0 +1,143 @@
+{
+  "aircraft": "Stock X-Plane 12 Airbus A330 (laminar/A333)",
+  "side": "captain",
+  "buttons": [
+    {
+      "name": "CSTR",
+      "command": "laminar/A333/buttons/capt_EFIS_CSTR",
+      "stateDataref": "laminar/A333/annun/EFIS_capt_cstr",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "WPT",
+      "command": "sim/instruments/EFIS_fix",
+      "stateDataref": "laminar/A333/annun/EFIS_capt_fix",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "VOR.D",
+      "command": "sim/instruments/EFIS_vor",
+      "stateDataref": "laminar/A333/annun/EFIS_capt_vor",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "NDB",
+      "command": "sim/instruments/EFIS_ndb",
+      "stateDataref": "laminar/A333/annun/EFIS_capt_ndb",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "ARPT",
+      "command": "sim/instruments/EFIS_apt",
+      "stateDataref": "laminar/A333/annun/EFIS_capt_arpt",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "FD",
+      "command": "sim/autopilot/fdir_command_bars_toggle",
+      "stateDataref": "sim/cockpit2/annunciators/flight_director",
+      "style": "legend",
+      "group": "fd-ls"
+    },
+    {
+      "name": "LS",
+      "command": "laminar/A333/buttons/capt_ils_bars_push",
+      "stateDataref": "laminar/A333/annun/captain_ls_bars_on",
+      "style": "legend",
+      "group": "fd-ls"
+    }
+  ],
+  "toggleSwitches": [
+    {
+      "name": "BRG1",
+      "idLabel": "1",
+      "stateDataref": "sim/cockpit2/EFIS/EFIS_1_selection_pilot",
+      "group": "brg",
+      "positions": [
+        { "label": "ADF", "command": "sim/instruments/EFIS_1_pilot_sel_adf", "value": 0 },
+        { "label": "OFF", "command": "sim/instruments/EFIS_1_pilot_sel_off", "value": 1 },
+        { "label": "VOR", "command": "sim/instruments/EFIS_1_pilot_sel_vor", "value": 3 }
+      ]
+    },
+    {
+      "name": "BRG2",
+      "idLabel": "2",
+      "stateDataref": "sim/cockpit2/EFIS/EFIS_2_selection_pilot",
+      "group": "brg",
+      "positions": [
+        { "label": "ADF", "command": "sim/instruments/EFIS_2_pilot_sel_adf", "value": 0 },
+        { "label": "OFF", "command": "sim/instruments/EFIS_2_pilot_sel_off", "value": 1 },
+        { "label": "VOR", "command": "sim/instruments/EFIS_2_pilot_sel_vor", "value": 3 }
+      ]
+    }
+  ],
+  "readouts": [
+    {
+      "name": "BARO",
+      "label": "QNH",
+      "format": "baro",
+      "group": "baro",
+      "datarefs": {
+        "value": "sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot",
+        "unit": "laminar/A333/barometer/capt_inHg_hPa_pos",
+        "std": "sim/cockpit2/gauges/actuators/barometer_setting_is_std_pilot"
+      },
+      "commands": {
+        "increment": "sim/instruments/barometer_up",
+        "decrement": "sim/instruments/barometer_down",
+        "std": "laminar/A333/pull/baro/capt_std",
+        "qnh": "laminar/A333/push/baro/capt_std",
+        "setInHg": "laminar/A333/knob/baro/capt_inHg",
+        "setHpa": "laminar/A333/knob/baro/capt_hPa"
+      },
+      "encoder": {
+        "label": "PULL STD",
+        "writeDataref": "sim/cockpit/misc/barometer_setting",
+        "valueKey": "value",
+        "unitArc": {
+          "startLabel": "in Hg",
+          "endLabel": "hPa",
+          "startCommand": "setInHg",
+          "endCommand": "setHpa",
+          "unitKey": "unit"
+        }
+      }
+    },
+    {
+      "name": "MODE",
+      "format": "positionLabel",
+      "group": "selectors",
+      "display": false,
+      "datarefs": {
+        "value": "laminar/A333/knobs/EFIS_mode_pos_capt"
+      },
+      "commands": {
+        "increment": "laminar/A333/knobs/capt_EFIS_knob_right",
+        "decrement": "laminar/A333/knobs/capt_EFIS_knob_left"
+      },
+      "encoder": {
+        "positions": ["LS", "VOR", "NAV", "ARC", "PLAN", "ENG"],
+        "stepPx": 40
+      }
+    },
+    {
+      "name": "RANGE",
+      "format": "positionLabel",
+      "group": "selectors",
+      "display": false,
+      "datarefs": {
+        "value": "sim/cockpit/switches/EFIS_map_range_selector"
+      },
+      "encoder": {
+        "positions": ["10", "20", "40", "80", "160", "320"],
+        "writeDataref": "sim/cockpit/switches/EFIS_map_range_selector",
+        "stepPx": 40
+      }
+    }
+  ]
+}

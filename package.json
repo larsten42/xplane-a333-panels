@@ -1,22 +1,23 @@
 {
-  "name": "xplane-mcdu-a333",
+  "name": "xplane-a333-panels",
   "version": "0.1.0",
   "private": true,
-  "description": "Web/tablet MCDU (CDU) interface for X-Plane 12's stock Airbus A330, driven by X-Plane's built-in Web API.",
+  "description": "Web/tablet cockpit panels (MCDU, EFIS) for X-Plane 12's stock Airbus A330, driven by X-Plane's built-in Web API.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/larsten42/xplane-mcdu-a333.git"
+    "url": "git+https://github.com/larsten42/xplane-a333-panels.git"
   },
-  "homepage": "https://github.com/larsten42/xplane-mcdu-a333#readme",
+  "homepage": "https://github.com/larsten42/xplane-a333-panels#readme",
   "bugs": {
-    "url": "https://github.com/larsten42/xplane-mcdu-a333/issues"
+    "url": "https://github.com/larsten42/xplane-a333-panels/issues"
   },
   "scripts": {
     "start": "node tools/mcdu-server.js",
     "mock": "node tools/mock-xplane-server/server.js",
-    "build:release": "node tools/build-release.mjs"
+    "build:release": "node tools/build-release.mjs",
+    "build:sea": "node tools/build-sea.mjs"
   },
   "devDependencies": {
     "ws": "^8.18.0"

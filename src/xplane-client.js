@@ -62,26 +62,30 @@ export class XPlaneClient {
     return this._resolveIds("commands", names);
   }
 
+  /**
+   * Resolves by fetching the full list once (cached per XPlaneClient
+   * instance) and filtering client-side, rather than a batched
+   * `filter[name]` REST query — X-Plane 404s the *entire* request if even
+   * one name in a multi-filter query doesn't match (confirmed live
+   * 2026-08-06: one valid + one invalid name together → 404, not partial
+   * results), which would otherwise take down every other name in the
+   * same batch too. A profile with one wrong/outdated name is exactly the
+   * case this needs to degrade gracefully from — see README "Known
+   * limitations" on unresolved keys being disabled, not fatal.
+   */
   async _resolveIds(kind, names) {
     const map = new Map();
     if (names.length === 0) return map;
-    // Batch to keep query strings sane; X-Plane doesn't document a limit,
-    // but a few hundred names per request is a reasonable ceiling.
-    const BATCH = 200;
-    for (let i = 0; i < names.length; i += BATCH) {
-      const batch = names.slice(i, i + BATCH);
-      const qs = batch.map((n) => `filter[name]=${encodeURIComponent(n)}`).join("&");
-      const res = await fetch(`${this.restBase}/${kind}?${qs}`);
-      if (!res.ok) throw new Error(`${kind} lookup: HTTP ${res.status}`);
-      const body = await res.json();
-      for (const entry of body.data ?? []) {
-        map.set(entry.name, entry.id);
-      }
+    const wanted = new Set(names);
+    this._allCache ??= {};
+    this._allCache[kind] ??= await this.listAll(kind);
+    for (const entry of this._allCache[kind]) {
+      if (wanted.has(entry.name)) map.set(entry.name, entry.id);
     }
     return map;
   }
 
-  /** Fetch the *entire* dataref or command list. Large; cache the result. */
+  /** Fetch the *entire* dataref or command list. Large; not cached itself (see _resolveIds for the cached path used by name resolution). */
   async listAll(kind) {
     const res = await fetch(`${this.restBase}/${kind}`);
     if (!res.ok) throw new Error(`list ${kind}: HTTP ${res.status}`);

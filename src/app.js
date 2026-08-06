@@ -2,12 +2,16 @@ import { XPlaneClient } from "./xplane-client.js";
 import { McduAdapter } from "./mcdu-adapter.js";
 import { McduScreenView } from "./mcdu-screen.js";
 import { McduKeypad } from "./mcdu-keypad.js";
+import { EfisAdapter } from "./efis-adapter.js";
+import { EfisPanel } from "./efis-panel.js";
 
 const STORAGE_KEY = "mcdu.connection";
 const THEME_KEY = "mcdu.theme";
 const BAR_HIDDEN_KEY = "mcdu.barHidden";
+const PANEL_KEY = "mcdu.panel";
 
 const els = {
+  panelSelect: document.getElementById("panel-select"),
   cdu: document.getElementById("conn-cdu"),
   connectBtn: document.getElementById("conn-connect"),
   status: document.getElementById("conn-status"),
@@ -21,16 +25,33 @@ const els = {
   themeSelect: document.getElementById("theme-select"),
   barToggle: document.getElementById("bar-toggle"),
   fullscreenToggle: document.getElementById("fullscreen-toggle"),
+  panelMcdu: document.getElementById("panel-mcdu"),
+  panelEfis: document.getElementById("panel-efis"),
+  efisContainer: document.getElementById("efis-panel"),
 };
+
+// Reconnecting swaps in new adapters/keypad bound to a new client, and
+// switching away from the MCDU panel detaches keyboard input entirely
+// (see showPanel()) — without detaching the previous listener first,
+// presses would pile up across every past connection, each firing against
+// a client that may no longer even be open. Declared before the
+// restore*() calls below since restorePanel() calls showPanel(), which
+// reads both of these immediately: a `let` referenced before its own
+// declaration line throws a ReferenceError even though the declaration is
+// hoisted, and that was silently killing the rest of this module's
+// top-level code — including every addEventListener() call after it.
+let detachKeyboardInput = null;
+let mcduKeypad = null;
 
 restoreConnectionForm();
 restoreTheme();
 restoreBarVisibility();
+restorePanel();
 
-// Full-screen-friendly: hides the CDU/key-style/connect controls once
-// you're actually set up and flying. The toggle button itself is fixed-
-// position outside .connection-bar (see css/mcdu.css .bar-toggle) so it's
-// still reachable to bring the bar back after hiding it.
+// Full-screen-friendly: hides the panel/CDU/key-style/connect controls
+// once you're actually set up and flying. The toggle button itself is
+// fixed-position outside .connection-bar (see css/mcdu.css .bar-toggle)
+// so it's still reachable to bring the bar back after hiding it.
 els.barToggle.addEventListener("click", () => {
   const hidden = document.body.classList.toggle("bar-hidden");
   els.barToggle.textContent = hidden ? "▼" : "▲";
@@ -82,11 +103,33 @@ function restoreTheme() {
   document.body.dataset.theme = theme;
 }
 
-// Reconnecting swaps in a new McduKeypad bound to a new adapter/client;
-// without detaching the previous keyboard listener first, presses would
-// pile up across every past connection, each firing against a client that
-// may no longer even be open.
-let detachKeyboardInput = null;
+// Which panel (MCDU/EFIS) is visible — independent of connection state, so
+// switching works before connecting too, it just shows an empty panel
+// until connect() populates it. body[data-panel=...] (see mcdu.css) is
+// what hides the CDU/Key-style controls when EFIS is showing, since
+// they're meaningless there.
+els.panelSelect.addEventListener("change", () => {
+  showPanel(els.panelSelect.value);
+  localStorage.setItem(PANEL_KEY, els.panelSelect.value);
+});
+
+function restorePanel() {
+  const panel = localStorage.getItem(PANEL_KEY) ?? "mcdu";
+  els.panelSelect.value = panel;
+  showPanel(panel);
+}
+
+function showPanel(panel) {
+  document.body.dataset.panel = panel;
+  els.panelMcdu.hidden = panel !== "mcdu";
+  els.panelEfis.hidden = panel !== "efis";
+
+  // The physical-keyboard bindings only make sense while the MCDU panel is
+  // the one actually on screen — otherwise typing while looking at EFIS
+  // would silently be driving MCDU keys underneath it.
+  detachKeyboardInput?.();
+  detachKeyboardInput = panel === "mcdu" ? mcduKeypad?.attachKeyboardInput() ?? null : null;
+}
 
 els.connectBtn.addEventListener("click", () => {
   connect().catch((err) => {
@@ -124,7 +167,9 @@ async function connect() {
   // server it loaded this page from (tools/mcdu-server.js), which proxies
   // /api/* to X-Plane over localhost — see that file for why. That also
   // means this works identically whether you're on the X-Plane machine
-  // itself or on a tablet elsewhere on the LAN.
+  // itself or on a tablet elsewhere on the LAN. One connection serves both
+  // panels — MCDU and EFIS just subscribe to different datarefs/commands
+  // over it, so switching panels never needs a reconnect.
   const client = new XPlaneClient(window.location.hostname, window.location.port || 80);
   client.onStatusChange = (state, detail) => setStatus(state, detail?.message);
 
@@ -145,29 +190,36 @@ async function connect() {
 
   await client.connectSocket();
 
-  const profile = await fetch("./config/profiles/default-fms.json").then((r) => r.json());
-  const adapter = new McduAdapter(client, profile, cduIndex);
-  await adapter.connect();
+  const [mcduProfile, efisProfile] = await Promise.all([
+    fetch("./config/profiles/default-fms.json").then((r) => r.json()),
+    fetch("./config/profiles/efis-a333.json").then((r) => r.json()),
+  ]);
 
-  new McduScreenView(els.screen, adapter);
+  const mcduAdapter = new McduAdapter(client, mcduProfile, cduIndex);
+  await mcduAdapter.connect();
 
-  const keypad = new McduKeypad(adapter);
-  keypad.renderLskColumn("line_select_left", els.lskLeft);
-  keypad.renderLskColumn("line_select_right", els.lskRight);
-  keypad.renderLayoutGrid(profile.keypadLayout.functionBlock, els.blockFunction);
-  keypad.renderLayoutGrid(profile.keypadLayout.utilityBlock, els.blockUtility);
-  keypad.renderLayoutGrid(profile.keypadLayout.numericBlock, els.blockNumeric);
-  keypad.renderLayoutGrid(profile.keypadLayout.alphaBlock, els.blockAlpha);
-  keypad.refreshAvailability();
+  new McduScreenView(els.screen, mcduAdapter);
 
-  detachKeyboardInput?.();
-  detachKeyboardInput = keypad.attachKeyboardInput();
+  mcduKeypad = new McduKeypad(mcduAdapter);
+  mcduKeypad.renderLskColumn("line_select_left", els.lskLeft);
+  mcduKeypad.renderLskColumn("line_select_right", els.lskRight);
+  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.functionBlock, els.blockFunction);
+  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.utilityBlock, els.blockUtility);
+  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.numericBlock, els.blockNumeric);
+  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.alphaBlock, els.blockAlpha);
+  mcduKeypad.refreshAvailability();
 
-  if (adapter.unresolvedKeys.size > 0) {
-    setStatus(
-      "open",
-      `connected, but ${adapter.unresolvedKeys.size} key(s) didn't resolve — see console`
-    );
+  const efisAdapter = new EfisAdapter(client, efisProfile);
+  await efisAdapter.connect();
+  new EfisPanel(els.efisContainer, efisAdapter);
+
+  // Re-applies keyboard-input attachment for whichever panel is currently
+  // selected, now that mcduKeypad actually exists.
+  showPanel(els.panelSelect.value);
+
+  const unresolvedCount = mcduAdapter.unresolvedKeys.size + efisAdapter.unresolved.size;
+  if (unresolvedCount > 0) {
+    setStatus("open", `connected, but ${unresolvedCount} item(s) didn't resolve — see console`);
   } else {
     setStatus("open", `connected to CDU ${cduIndex}`);
   }

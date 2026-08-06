@@ -17,6 +17,26 @@
   font-display: swap;
 }
 
+/* B612 (proportional): the same Airbus/Polarsys family's non-monospace
+   sibling — for EFIS printed-panel labels (in Hg, VOR, ADF, etc.), which
+   on the real hardware aren't set in a monospace face the way the CDU's
+   own CRT text is. Same license (fonts/OFL.txt covers the whole B612
+   Project, not just the Mono cut). */
+@font-face {
+  font-family: "B612";
+  src: url("../fonts/B612-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "B612";
+  src: url("../fonts/B612-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bezel: #1e1f22;
   --screen-bg: #0a0d0a;
@@ -33,6 +53,17 @@
   --c-magenta: #ff7ad1;
   --c-amber: #ffb84d;
   --c-white: #e8e8e8;
+
+  /* Top bar chrome — its own small palette, but tied to the instrument's:
+     the accent is the CDU screen's own cyan (toned down for UI use rather
+     than screen-glow use), and status colors below reuse --c-green/
+     --c-amber/--c-red directly, so "connected" reads the same green as
+     the screen itself rather than an unrelated web-blue. */
+  --bar-bg: #202226;
+  --bar-border: #34363b;
+  --bar-text-muted: #8a8d93;
+  --accent: #37c9e6;
+  --accent-dim: #1f5b66;
 }
 
 * { box-sizing: border-box; }
@@ -55,38 +86,72 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  background: #1f2023;
-  padding: 8px 12px;
-  border-radius: 8px;
+  gap: 16px;
+  background: var(--bar-bg);
+  border: 1px solid var(--bar-border);
+  padding: 10px 16px;
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+/* Label text reads as a muted micro-label, distinct from the select's own
+   (bright) value — no extra markup needed for that, since .connection-bar
+   select sets its own color and simply overrides what it inherits here. */
 .connection-bar label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.85rem;
+  gap: 7px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--bar-text-muted);
 }
 
 .connection-bar select {
-  background: #101113;
-  border: 1px solid #3a3b3e;
+  background: #16171a;
+  border: 1px solid var(--bar-border);
   color: var(--key-text);
-  border-radius: 4px;
-  padding: 4px 6px;
+  border-radius: 6px;
+  padding: 5px 8px;
   width: 9em;
+  font-size: 0.85rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
 }
+.connection-bar select:hover { border-color: #4a4d52; }
 
+/* The primary call to action — styled as a considered instrument-panel
+   button (dark metal + cyan accent) rather than a generic web-blue
+   button, so the first thing you interact with doesn't clash with the
+   considered look of the instrument below it. */
 .connection-bar button {
-  background: #3b6fd4;
-  border: none;
-  color: white;
-  padding: 6px 14px;
-  border-radius: 4px;
+  background: linear-gradient(160deg, #2a4a4d 0%, #16282a 100%);
+  border: 1px solid var(--accent-dim);
+  color: #bdf4fb;
+  padding: 7px 18px;
+  border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.connection-bar button:disabled { opacity: 0.6; cursor: default; }
+.connection-bar button:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px -2px var(--accent);
+}
+.connection-bar button:active:not(:disabled) { transform: translateY(1px); }
+.connection-bar button:disabled { opacity: 0.5; cursor: default; }
+
+.connection-bar select:focus-visible,
+.connection-bar button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
 
 /* Small persistent control to hide/show .connection-bar (see app.js), for
    using the app full-screen on a tablet without the setup UI taking up
@@ -98,16 +163,21 @@ body {
   top: 6px;
   right: 6px;
   z-index: 10;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid #3a3b3e;
-  border-radius: 4px;
-  background: #1f2023;
+  border: 1px solid var(--bar-border);
+  border-radius: 6px;
+  background: var(--bar-bg);
   color: var(--key-text);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.bar-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 /* Sits to the left of .bar-toggle, same size — two small fixed controls in
    the corner rather than folding this into the hide-bar button, since
@@ -118,11 +188,62 @@ body {
 }
 body.bar-hidden .connection-bar { display: none; }
 
-.status { margin-left: auto; font-size: 0.85rem; padding: 3px 8px; border-radius: 4px; }
-.status-closed { background: #3a3b3e; }
-.status-connecting { background: #6b5b1f; }
-.status-open { background: #1f6b3a; }
-.status-error { background: #6b1f1f; }
+/* CDU position and Key style only mean anything for the MCDU panel — see
+   app.js's showPanel(), which sets body[data-panel]. */
+body[data-panel="efis"] .mcdu-only-control { display: none; }
+
+/* Status as a small pill with a colored dot rather than a solid block of
+   color — quieter, and the dot's color is scannable at a glance
+   independent of the text next to it. Each state reuses the exact same
+   semantic colors the CDU screen itself uses (--c-green/--c-amber/
+   --c-red), so "connected" means the same green everywhere in the app. */
+.status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  padding: 4px 12px 4px 10px;
+  border-radius: 999px;
+  background: #232427;
+  border: 1px solid var(--bar-border);
+  color: #c7c9cd;
+}
+.status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+.status-closed { color: var(--bar-text-muted); }
+.status-connecting { color: var(--c-amber); }
+.status-open { color: var(--c-green); }
+.status-error { color: var(--c-red); }
+
+/* .mcdu-unit and .mcdu-keypad used to be direct children of <body> (which
+   is display:flex; gap:12px), so that gap alone kept them apart. Wrapping
+   them in #panel-mcdu (see index.html, for MCDU/EFIS panel switching)
+   made them plain block-flow siblings *inside* that div instead — nothing
+   enforced any space between them anymore, so the keypad rendered flush
+   against (visually on top of) the screen. This restores the same gap,
+   one level down; .panel-content is shared with #panel-efis too, which
+   only has one child today but benefits from the same consistent spacing
+   if that ever changes. */
+.panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* The browser's own [hidden] { display: none } rule and this class rule
+   are equal specificity, and author CSS always wins ties against the
+   user-agent stylesheet — so display:flex above was silently overriding
+   app.js's hidden = true/false toggle, and both panels stayed visible
+   regardless of the dropdown. This wins the tie back explicitly. */
+.panel-content[hidden] {
+  display: none;
+}
 
 /* ------------------------------------------------------------- screen --- */
 

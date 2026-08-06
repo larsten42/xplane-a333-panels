@@ -48,6 +48,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isSea, getAsset } from "node:sea";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.argv[2]) || 5173;
@@ -66,10 +67,32 @@ const MIME = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+// Packaged single-executable builds (see tools/build-sea.mjs) embed every
+// static asset directly in the binary via Node's `--build-sea`, keyed by the
+// same relative path used here — no files need to sit next to the exe. A
+// normal `node tools/mcdu-server.js` run isn't a SEA, so this always falls
+// through to reading straight off disk exactly as before.
 function serveStatic(req, res) {
   const urlPath = decodeURIComponent(req.url.split("?")[0]);
-  const filePath = path.join(ROOT, urlPath === "/" ? "/index.html" : urlPath);
+  const relPath = urlPath === "/" ? "index.html" : urlPath.replace(/^\//, "");
+  const ext = path.extname(relPath);
+  const headers = { "Content-Type": MIME[ext] ?? "application/octet-stream", "Cache-Control": "no-cache" };
 
+  if (isSea()) {
+    let data;
+    try {
+      data = getAsset(relPath); // throws if relPath isn't an embedded asset key
+    } catch {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found: " + urlPath);
+      return;
+    }
+    res.writeHead(200, headers);
+    res.end(Buffer.from(data));
+    return;
+  }
+
+  const filePath = path.join(ROOT, relPath);
   // Prevent escaping the project root via ../
   if (!filePath.startsWith(ROOT)) {
     res.writeHead(403);
@@ -83,11 +106,7 @@ function serveStatic(req, res) {
       res.end("Not found: " + urlPath);
       return;
     }
-    const ext = path.extname(filePath);
-    res.writeHead(200, {
-      "Content-Type": MIME[ext] ?? "application/octet-stream",
-      "Cache-Control": "no-cache",
-    });
+    res.writeHead(200, headers);
     res.end(data);
   });
 }
