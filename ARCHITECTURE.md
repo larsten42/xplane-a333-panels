@@ -72,8 +72,12 @@ node tools/build-sea.mjs
 
 Uses Node's built-in `--build-sea` (Node ≥25.5), embedding every static
 asset directly into the binary via [`node:sea`](https://nodejs.org/api/single-executable-applications.html) —
-nothing needs to sit next to it on disk. On macOS, sign the result before
-running it: `codesign --sign - dist-sea/mcdu-server-darwin-*`.
+nothing needs to sit next to it on disk. Already runnable immediately
+after this on the machine that built it — `build-sea.mjs` handles
+`chmod +x` and (on macOS) an ad-hoc `codesign` itself. If the binary then
+moves to another machine, see README.md's "Getting started" for the
+xattr/chmod a downloaded copy needs — those only apply to a file that
+actually crossed the network (e.g. a browser download), not a local build.
 
 If X-Plane runs on a different machine than `mcdu-server.js`, set the
 `XPLANE_HOST`/`XPLANE_PORT` environment variables before starting it. That

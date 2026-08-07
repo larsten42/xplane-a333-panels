@@ -11,11 +11,15 @@
 // for the server logic itself, only for the assets it hands out over HTTP.
 //
 // Usage: node tools/build-sea.mjs [output-path]
-//   Then, to make the result runnable on the machine that built it:
-//     macOS:   codesign --sign - <output-path>
-//     Windows: signtool sign /fd SHA256 <output-path>   (optional — an
-//              unsigned .exe still runs, just with an "unknown publisher"
-//              prompt)
+//   Already runnable immediately after this on the machine that built it —
+//   chmod +x and (on macOS) an ad-hoc codesign both happen automatically
+//   below. Only relevant if the binary then moves to another machine, e.g.
+//   downloaded from a GitHub Release in a browser: browsers don't preserve
+//   the execute bit, and macOS additionally quarantines anything downloaded
+//   from the internet regardless of this ad-hoc signature (that's a
+//   Gatekeeper check, separate from — and not satisfied by — a signature
+//   that isn't from a paid Apple Developer ID) — see README.md's "Getting
+//   started" for the xattr/chmod a downloaded copy needs.
 //   Cross-platform builds (e.g. building linux/win binaries from macOS) work
 //   too if you pass a matching platform's `executable` — not done here, see
 //   .github/workflows/release.yml, which instead builds natively on each OS.

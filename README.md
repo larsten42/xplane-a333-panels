@@ -51,8 +51,20 @@ node tools/mcdu-server.js
 
 Don't want to install Node? The [releases page](https://github.com/larsten42/xplane-a333-panels/releases/latest)
 also has a single-file executable for Windows/macOS/Linux with everything
-built in — download the one for your OS and run it directly, no `node`
-command needed.
+built in. Browsers don't preserve the executable bit on what they
+download, so there's a one-time step first — from Terminal, in whatever
+folder it downloaded to:
+
+- **macOS**: `chmod +x mcdu-server-darwin-arm64 && xattr -d com.apple.quarantine mcdu-server-darwin-arm64`
+  — the second command clears Gatekeeper's "downloaded from the internet"
+  quarantine flag, which blocks it from running even though the binary is
+  already (ad-hoc) signed.
+- **Linux**: `chmod +x mcdu-server-linux-x64`
+- **Windows**: no extra step, but SmartScreen will flag the `.exe` as from
+  an unrecognized publisher the first time — click **More info → Run
+  anyway**.
+
+Then run it directly, no `node` command needed.
 
 Open the printed URL — `http://localhost:5173` on the X-Plane machine, or
 `http://<that machine's LAN IP>:5173` from a tablet — and press **Connect**.
