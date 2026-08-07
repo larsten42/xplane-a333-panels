@@ -87,6 +87,6 @@ CDU dataref layout, and rough edges found along the way — see
 
 ## License
 
-MIT — see `LICENSE`. The bundled fonts (`fonts/`) are under the separate
-SIL Open Font License; see `fonts/OFL.txt` (B612 family) and
-`fonts/DSEG-OFL.txt` (DSEG7 Modern).
+MIT — see [`LICENSE`](LICENSE). The bundled fonts (`fonts/`) are under the
+separate SIL Open Font License; see [`fonts/OFL.txt`](fonts/OFL.txt) (B612
+family) and [`fonts/DSEG-OFL.txt`](fonts/DSEG-OFL.txt) (DSEG7 Modern).
