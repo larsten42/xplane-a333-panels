@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>A330 Panels — X-Plane 12</title>
   <link rel="stylesheet" href="./css/mcdu.css" />
-  <link rel="stylesheet" href="./css/efis.css" />
+  <!-- Defines <fcu-panel>, <efis-panel>, and their constituent custom
+       elements — used by both panels below, so it's loaded once, here,
+       rather than duplicated near each usage site. See vendor/README.md. -->
+  <script src="./vendor/fcu-instruments.js"></script>
 </head>
 <body>
   <header class="connection-bar">
@@ -13,6 +16,7 @@
       <select id="panel-select">
         <option value="mcdu">MCDU</option>
         <option value="efis">EFIS</option>
+        <option value="fcu">FCU</option>
       </select>
     </label>
     <label class="mcdu-only-control">CDU
@@ -34,6 +38,11 @@
   </header>
   <button id="bar-toggle" class="bar-toggle" type="button" aria-label="Hide top bar" title="Hide top bar">▲</button>
   <button id="fullscreen-toggle" class="bar-toggle fullscreen-toggle" type="button" aria-label="Enter full screen" title="Enter full screen">⛶</button>
+  <!-- Only meaningful for FCU/EFIS (see body[data-panel] rule in
+       mcdu.css) — MCDU has its own established sizing. One shared toggle
+       and preference for both, since only one of the two is ever visible
+       at a time. -->
+  <button id="autoscale-toggle" class="bar-toggle autoscale-toggle" type="button" aria-label="Toggle auto-scale" title="Auto-scale: fit to window">FIT</button>
 
   <div id="panel-mcdu" class="panel-content">
     <main class="mcdu-unit">
@@ -56,17 +65,22 @@
     </div>
   </div>
 
+  <!-- <efis-panel>/<fcu-panel> are custom elements from the vendored
+       component library (vendor/fcu-instruments.js, loaded in <head>) —
+       they build their own DOM and style themselves entirely via inline
+       styles, so there's no markup or CSS of ours to maintain here.
+       src/efis-panel.js and src/fcu-panel.js wire the real X-Plane
+       adapters to their window.efis/window.fcuPanel APIs once connected.
+       See vendor/README.md for how to bring in an updated bundle. -->
   <div id="panel-efis" class="panel-content" hidden>
-    <div id="efis-panel" class="efis-layout">
-      <div class="efis-col">
-        <div class="efis-group" data-group="baro"></div>
-        <div class="efis-group efis-group-row" data-group="fd-ls"></div>
-      </div>
-      <div class="efis-col">
-        <div class="efis-group efis-group-row" data-group="nd-row"></div>
-        <div class="efis-group efis-group-row" data-group="selectors"></div>
-        <div class="efis-group efis-group-row" data-group="brg"></div>
-      </div>
+    <div class="scalable-panel">
+      <efis-panel></efis-panel>
+    </div>
+  </div>
+
+  <div id="panel-fcu" class="panel-content" hidden>
+    <div class="scalable-panel">
+      <fcu-panel></fcu-panel>
     </div>
   </div>
 

@@ -17,26 +17,6 @@
   font-display: swap;
 }
 
-/* B612 (proportional): the same Airbus/Polarsys family's non-monospace
-   sibling — for EFIS printed-panel labels (in Hg, VOR, ADF, etc.), which
-   on the real hardware aren't set in a monospace face the way the CDU's
-   own CRT text is. Same license (fonts/OFL.txt covers the whole B612
-   Project, not just the Mono cut). */
-@font-face {
-  font-family: "B612";
-  src: url("../fonts/B612-Regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "B612";
-  src: url("../fonts/B612-Bold.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
   --bezel: #1e1f22;
   --screen-bg: #0a0d0a;
@@ -186,11 +166,65 @@ body {
   right: 34px;
   font-size: 13px;
 }
+/* One more slot left again — only meaningful for FCU/EFIS (see the
+   body[data-panel="mcdu"] rule below), so hidden while MCDU is showing. */
+.autoscale-toggle {
+  right: 62px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.autoscale-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+body[data-panel="mcdu"] .autoscale-toggle {
+  display: none;
+}
 body.bar-hidden .connection-bar { display: none; }
 
 /* CDU position and Key style only mean anything for the MCDU panel — see
    app.js's showPanel(), which sets body[data-panel]. */
-body[data-panel="efis"] .mcdu-only-control { display: none; }
+body[data-panel="efis"] .mcdu-only-control,
+body[data-panel="fcu"] .mcdu-only-control { display: none; }
+
+/* .panel-content itself doesn't grow to fill available height by default
+   (flex: 0 1 auto, sized to content) — .scalable-panel's flex:1 below
+   would have nothing to grow into without this, so its measured size
+   would just reflect the native panel size instead of the real available
+   window space. Scoped to these two ids rather than added to the shared
+   .panel-content class: MCDU's own layout already sizes itself off its
+   content and isn't part of this, so it shouldn't start stretching too. */
+#panel-efis,
+#panel-fcu {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Fills the remaining vertical space in .panel-content (a flex column)
+   and centers/clips its child — the actual scaling is a plain
+   `transform: scale()` applied directly to the <fcu-panel>/<efis-panel>
+   element by src/panel-autoscale.js, computed from this container's own
+   measured size vs. the panel's native pixel size. min-height:0 is load
+   -bearing: without it, a flex child can't shrink below its content size,
+   so it would just push the container taller instead of ever leaving room
+   to scale down. */
+.scalable-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.scalable-panel > * {
+  transform-origin: center center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .scalable-panel > * {
+    transition: transform 0.15s ease;
+  }
+}
 
 /* Status as a small pill with a colored dot rather than a solid block of
    color — quieter, and the dot's color is scannable at a glance

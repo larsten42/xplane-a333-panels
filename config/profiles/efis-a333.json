@@ -138,6 +138,13 @@
         "writeDataref": "sim/cockpit/switches/EFIS_map_range_selector",
         "stepPx": 40
       }
+    },
+    {
+      "name": "AVIONICS",
+      "format": "raw",
+      "datarefs": {
+        "value": "sim/cockpit/electrical/avionics_on"
+      }
     }
   ]
 }

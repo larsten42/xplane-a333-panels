@@ -1,0 +1,173 @@
+{
+  "aircraft": "Stock X-Plane 12 Airbus A330 (laminar/A333)",
+  "side": "captain",
+  "buttons": [
+    {
+      "name": "AP1",
+      "command": "sim/autopilot/servos_toggle",
+      "stateDataref": "laminar/A333/PFD/FMAs/autopilot_12_status",
+      "litValue": 1
+    },
+    {
+      "name": "AP2",
+      "command": "sim/autopilot/servos2_toggle",
+      "stateDataref": "laminar/A333/PFD/FMAs/autopilot_12_status",
+      "litValue": 2
+    },
+    {
+      "name": "A/THR",
+      "stateDataref": "sim/cockpit2/autopilot/autothrottle_arm",
+      "onCommands": ["laminar/A333/autopilot/a_thr_toggle", "sim/autopilot/autothrottle_arm"],
+      "offCommands": ["laminar/A333/autopilot/a_thr_toggle", "sim/autopilot/autothrottle_hard_off"]
+    },
+    {
+      "name": "HDG_TRK",
+      "command": "sim/autopilot/trkfpa"
+    },
+    {
+      "name": "ALT",
+      "command": "sim/autopilot/altitude_hold",
+      "stateDataref": "sim/cockpit2/autopilot/altitude_hold_armed",
+      "invert": true
+    },
+    {
+      "name": "APPR",
+      "command": "sim/autopilot/approach",
+      "stateDataref": "sim/cockpit2/autopilot/approach_status"
+    },
+    {
+      "name": "LOC",
+      "command": "sim/autopilot/NAV",
+      "stateDataref": "laminar/A333/PFD/FMAs/nav_loc_arm_status"
+    },
+    {
+      "name": "SPD_MACH",
+      "command": "sim/autopilot/knots_mach_toggle"
+    },
+    {
+      "name": "METRIC_ALT",
+      "command": "laminar/A333/autopilot/metric_alt_push"
+    },
+    {
+      "name": "ALT_STEP_LEFT",
+      "command": "laminar/A333/autopilot/alt_step_left"
+    },
+    {
+      "name": "ALT_STEP_RIGHT",
+      "command": "laminar/A333/autopilot/alt_step_right"
+    },
+    {
+      "name": "HDG_PULL",
+      "command": "laminar/A333/autopilot/heading_knob_pull"
+    },
+    {
+      "name": "HDG_PUSH",
+      "command": "laminar/A333/autopilot/heading_knob_push"
+    },
+    {
+      "name": "HDG_SYNC",
+      "command": "sim/autopilot/heading_sync"
+    },
+    {
+      "name": "HDG_GPSS",
+      "command": "sim/autopilot/gpss"
+    },
+    {
+      "name": "ALT_KNOB_PULL",
+      "command": "laminar/A333/autopilot/altitude_knob_pull"
+    },
+    {
+      "name": "ALT_KNOB_PUSH",
+      "command": "laminar/A333/autopilot/altitude_knob_push"
+    },
+    {
+      "name": "ALT_SPEED_HOLD",
+      "command": "sim/autopilot/speed_hold"
+    },
+    {
+      "name": "ALT_LEVEL_CHANGE",
+      "command": "sim/autopilot/level_change"
+    },
+    {
+      "name": "ALT_INTV",
+      "command": "sim/autopilot/alt_intv"
+    },
+    {
+      "name": "ALT_FMS",
+      "command": "sim/autopilot/FMS"
+    }
+  ],
+  "readouts": [
+    {
+      "name": "SPD",
+      "format": "fcuSpeed",
+      "datarefs": {
+        "value": "sim/cockpit/autopilot/airspeed",
+        "selected": "sim/cockpit2/autopilot/vnav_speed_window_open",
+        "mach": "sim/cockpit/autopilot/airspeed_is_mach"
+      },
+      "commands": {
+        "pull": "laminar/A333/autopilot/speed_knob_pull",
+        "push": "laminar/A333/autopilot/speed_knob_push"
+      },
+      "encoder": {
+        "writeDataref": "sim/cockpit/autopilot/airspeed",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "HDG",
+      "format": "fcuHeading",
+      "datarefs": {
+        "value": "sim/cockpit/autopilot/heading_mag",
+        "selected": "laminar/A333/autopilot/hdg_window_open"
+      },
+      "encoder": {
+        "writeDataref": "sim/cockpit/autopilot/heading_mag",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "ALT",
+      "format": "fcuAltitude",
+      "datarefs": {
+        "value": "sim/cockpit/autopilot/altitude",
+        "ring": "laminar/A333/autopilot/alt_step_knob_pos",
+        "managed": "sim/cockpit2/autopilot/fms_vnav"
+      },
+      "encoder": {
+        "writeDataref": "sim/cockpit/autopilot/altitude"
+      }
+    },
+    {
+      "name": "VS",
+      "format": "fcuVerticalSpeed",
+      "datarefs": {
+        "value": "sim/cockpit/autopilot/vertical_velocity",
+        "shown": "laminar/A333/autopilot/vvi_fpa_window_open"
+      },
+      "commands": {
+        "pull": "laminar/A333/autopilot/vertical_knob_pull",
+        "push": "laminar/A333/autopilot/vertical_knob_push"
+      },
+      "encoder": {
+        "writeDataref": "sim/cockpit/autopilot/vertical_velocity",
+        "stepValue": 100
+      }
+    },
+    {
+      "name": "TRK_FPA_MODE",
+      "format": "raw",
+      "datarefs": {
+        "value": "sim/cockpit2/autopilot/trk_fpa"
+      }
+    },
+    {
+      "name": "AVIONICS",
+      "format": "raw",
+      "datarefs": {
+        "value": "sim/cockpit/electrical/avionics_on"
+      }
+    }
+  ]
+}

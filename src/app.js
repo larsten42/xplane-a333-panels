@@ -3,7 +3,15 @@ import { McduAdapter } from "./mcdu-adapter.js";
 import { McduScreenView } from "./mcdu-screen.js";
 import { McduKeypad } from "./mcdu-keypad.js";
 import { EfisAdapter } from "./efis-adapter.js";
-import { EfisPanel } from "./efis-panel.js";
+import { wireEfisPanel, blankEfisPanel } from "./efis-panel.js";
+import { wireFcuPanel, blankFcuPanel } from "./fcu-panel.js";
+import { setupAutoscale } from "./panel-autoscale.js";
+
+// <fcu-panel>/<efis-panel>'s native, unscaled pixel size — see their own
+// INTEGRATION.md's "Sizing" table. Needed here (not just discoverable from
+// the DOM) since panel-autoscale.js computes a scale factor against these.
+const FCU_NATIVE_SIZE = { width: 1266, height: 442 };
+const EFIS_NATIVE_SIZE = { width: 720, height: 370 };
 
 const STORAGE_KEY = "mcdu.connection";
 const THEME_KEY = "mcdu.theme";
@@ -25,9 +33,10 @@ const els = {
   themeSelect: document.getElementById("theme-select"),
   barToggle: document.getElementById("bar-toggle"),
   fullscreenToggle: document.getElementById("fullscreen-toggle"),
+  autoscaleToggle: document.getElementById("autoscale-toggle"),
   panelMcdu: document.getElementById("panel-mcdu"),
   panelEfis: document.getElementById("panel-efis"),
-  efisContainer: document.getElementById("efis-panel"),
+  panelFcu: document.getElementById("panel-fcu"),
 };
 
 // Reconnecting swaps in new adapters/keypad bound to a new client, and
@@ -47,6 +56,27 @@ restoreConnectionForm();
 restoreTheme();
 restoreBarVisibility();
 restorePanel();
+
+// Otherwise <fcu-panel>/<efis-panel> show the vendored components' own
+// baked-in demo values from page load until connect() actually wires them
+// up — indistinguishable from real live data at a glance.
+blankFcuPanel();
+blankEfisPanel();
+
+setupAutoscale(els.autoscaleToggle, [
+  {
+    container: els.panelFcu.querySelector(".scalable-panel"),
+    panelEl: els.panelFcu.querySelector("fcu-panel"),
+    nativeWidth: FCU_NATIVE_SIZE.width,
+    nativeHeight: FCU_NATIVE_SIZE.height,
+  },
+  {
+    container: els.panelEfis.querySelector(".scalable-panel"),
+    panelEl: els.panelEfis.querySelector("efis-panel"),
+    nativeWidth: EFIS_NATIVE_SIZE.width,
+    nativeHeight: EFIS_NATIVE_SIZE.height,
+  },
+]);
 
 // Full-screen-friendly: hides the panel/CDU/key-style/connect controls
 // once you're actually set up and flying. The toggle button itself is
@@ -123,6 +153,7 @@ function showPanel(panel) {
   document.body.dataset.panel = panel;
   els.panelMcdu.hidden = panel !== "mcdu";
   els.panelEfis.hidden = panel !== "efis";
+  els.panelFcu.hidden = panel !== "fcu";
 
   // The physical-keyboard bindings only make sense while the MCDU panel is
   // the one actually on screen — otherwise typing while looking at EFIS
@@ -190,9 +221,10 @@ async function connect() {
 
   await client.connectSocket();
 
-  const [mcduProfile, efisProfile] = await Promise.all([
+  const [mcduProfile, efisProfile, fcuProfile] = await Promise.all([
     fetch("./config/profiles/default-fms.json").then((r) => r.json()),
     fetch("./config/profiles/efis-a333.json").then((r) => r.json()),
+    fetch("./config/profiles/fcu-a333.json").then((r) => r.json()),
   ]);
 
   const mcduAdapter = new McduAdapter(client, mcduProfile, cduIndex);
@@ -211,13 +243,17 @@ async function connect() {
 
   const efisAdapter = new EfisAdapter(client, efisProfile);
   await efisAdapter.connect();
-  new EfisPanel(els.efisContainer, efisAdapter);
+  wireEfisPanel(efisAdapter);
+
+  const fcuAdapter = new EfisAdapter(client, fcuProfile);
+  await fcuAdapter.connect();
+  wireFcuPanel(fcuAdapter);
 
   // Re-applies keyboard-input attachment for whichever panel is currently
   // selected, now that mcduKeypad actually exists.
   showPanel(els.panelSelect.value);
 
-  const unresolvedCount = mcduAdapter.unresolvedKeys.size + efisAdapter.unresolved.size;
+  const unresolvedCount = mcduAdapter.unresolvedKeys.size + efisAdapter.unresolved.size + fcuAdapter.unresolved.size;
   if (unresolvedCount > 0) {
     setStatus("open", `connected, but ${unresolvedCount} item(s) didn't resolve — see console`);
   } else {

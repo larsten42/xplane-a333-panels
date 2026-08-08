@@ -1,10 +1,11 @@
 # X-Plane A330 Panels
 
 Web-based cockpit panels for X-Plane 12's stock Airbus A330 — an **MCDU
-(CDU)** and an **EFIS control panel**, both in one page, switched with a
-Panel selector in the top bar. Runs in any browser, no X-Plane plugin to
-install. Open it on a tablet on the same network as the sim and you have
-extra hardware next to your keyboard.
+(CDU)**, an **EFIS control panel**, and an **FCU (autopilot control
+panel)**, all in one page, switched with a Panel selector in the top bar.
+Runs in any browser, no X-Plane plugin to install. Open it on a tablet on
+the same network as the sim and you have extra hardware next to your
+keyboard.
 
 ## Screenshots
 
@@ -19,7 +20,11 @@ extra hardware next to your keyboard.
 </tr>
 </table>
 
-Both panels live on the same page, switched with the **Panel** selector.
+<!-- FCU screenshots still needed — the panel itself is fully wired, just
+     not yet photographed for the README. -->
+
+All three panels live on the same page, switched with the **Panel**
+selector.
 
 ## Requirements
 
@@ -70,8 +75,8 @@ Open the printed URL — `http://localhost:5173` on the X-Plane machine, or
 `http://<that machine's LAN IP>:5173` from a tablet — and press **Connect**.
 There's no host or port to configure; the page always talks back to
 whatever server it loaded from. Use the **Panel** selector in the top bar to
-switch between MCDU and EFIS — both share the one connection, so there's no
-need to reconnect when switching.
+switch between MCDU, EFIS, and FCU — all three share the one connection,
+so there's no need to reconnect when switching.
 
 ## More information
 
@@ -87,6 +92,6 @@ CDU dataref layout, and rough edges found along the way — see
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). The bundled fonts (`fonts/`) are under the
-separate SIL Open Font License; see [`fonts/OFL.txt`](fonts/OFL.txt) (B612
-family) and [`fonts/DSEG-OFL.txt`](fonts/DSEG-OFL.txt) (DSEG7 Modern).
+MIT — see [`LICENSE`](LICENSE). The bundled font (`fonts/B612Mono-Regular.ttf`)
+is under the separate SIL Open Font License; see
+[`fonts/OFL.txt`](fonts/OFL.txt).

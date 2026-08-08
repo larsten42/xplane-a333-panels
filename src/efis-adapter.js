@@ -9,6 +9,27 @@
 // Much simpler than mcdu-adapter.js — these datarefs are plain scalars
 // (no base64/character-grid decoding), and there's no {cdu} template
 // substitution to do; the profile just lists full command/dataref names.
+//
+// Not actually EFIS-specific under the hood (nothing here hardcodes
+// anything about the EFIS panel) — reused as-is for the FCU's buttons too
+// (see src/fcu-panel.js), which need a few extra button shapes beyond
+// plain "one command, boolean dataref":
+//   - `litValue`: for buttons that share ONE dataref between several
+//     mutually-exclusive states (e.g. AP1/AP2 both read
+//     autopilot_12_status, lit when it equals 1 or 2 respectively) rather
+//     than each having its own boolean dataref.
+//   - `onCommands`/`offCommands`: for buttons where a single logical
+//     press actually needs more than one command sent together (e.g.
+//     A/THR's a_thr_toggle + autothrottle_arm to engage, a_thr_toggle +
+//     autothrottle_hard_off to disengage, confirmed against X-Plane's own
+//     stock button behavior 2026-08-08) — same "check current state, then
+//     press whichever side applies" shape as the baro encoder's std/qnh
+//     pair, just for a plain button instead of a knob.
+//   - no `stateDataref` at all: for buttons with no light of their own on
+//     the real hardware (e.g. the FCU's HDG-TRK/V-S-FPA mode toggle, which
+//     just changes what the display shows, confirmed live — firing
+//     sim/autopilot/trkfpa doesn't move any autopilot-status dataref) —
+//     still gets a resolved command to press, just no lit-state tracking.
 
 import { READOUT_FORMATS, READOUT_STEP_SIZES } from "./readout-formats.js";
 
@@ -35,6 +56,8 @@ export class EfisAdapter {
     this._encoderWriteIds = new Map();
     /** @type {Map<string, number>} "buttonName" or "readoutName.commandKey" -> command id, only entries that resolved */
     this._commandIds = new Map();
+    /** @type {Map<string, {on: number[], off: number[]}>} button name -> resolved command ids for buttons with onCommands/offCommands instead of a single command */
+    this._onOffCommandIds = new Map();
     /** @type {Set<string>} same keys as above, present in the profile but unresolved on this sim */
     this.unresolved = new Set();
     /** @type {Map<string, number>} name -> pending queued press count, for queuePress() */
@@ -60,12 +83,13 @@ export class EfisAdapter {
     const toggleSwitches = this.profile.toggleSwitches ?? [];
 
     const commandNames = [
-      ...buttons.map((b) => b.command),
+      ...buttons.map((b) => b.command).filter(Boolean),
+      ...buttons.flatMap((b) => [...(b.onCommands ?? []), ...(b.offCommands ?? [])]),
       ...readouts.flatMap((r) => Object.values(r.commands ?? {})),
       ...toggleSwitches.flatMap((s) => s.positions.map((p) => p.command)),
     ];
     const datarefNames = [
-      ...buttons.map((b) => b.stateDataref),
+      ...buttons.map((b) => b.stateDataref).filter(Boolean),
       ...readouts.flatMap((r) => Object.values(r.datarefs)),
       ...readouts.flatMap((r) => (r.encoder?.writeDataref ? [r.encoder.writeDataref] : [])),
       ...toggleSwitches.map((s) => s.stateDataref),
@@ -88,25 +112,54 @@ export class EfisAdapter {
   }
 
   _connectButton(button, commandIds, datarefIds) {
-    const cmdId = commandIds.get(button.command);
-    const drId = datarefIds.get(button.stateDataref);
-    if (cmdId == null || drId == null) {
-      console.warn(
-        `[efis-adapter] button "${button.name}": missing command/dataref (command=${button.command} -> ${cmdId}, ` +
-          `dataref=${button.stateDataref} -> ${drId}). Button will be disabled.`
-      );
-      this.unresolved.add(button.name);
-      return;
+    // stateDataref is optional — some buttons (e.g. the FCU's HDG-TRK/
+    // V-S-FPA mode toggle) have no light of their own to reflect on the
+    // real hardware; they still need a resolved command to press, just no
+    // lit-state subscription.
+    let drId = null;
+    if (button.stateDataref) {
+      drId = datarefIds.get(button.stateDataref);
+      if (drId == null) {
+        console.warn(`[efis-adapter] button "${button.name}": missing dataref ${button.stateDataref}. Button will be disabled.`);
+        this.unresolved.add(button.name);
+        return;
+      }
     }
-    this._commandIds.set(button.name, cmdId);
+
+    if (button.onCommands && button.offCommands) {
+      const onIds = button.onCommands.map((name) => commandIds.get(name));
+      const offIds = button.offCommands.map((name) => commandIds.get(name));
+      if (onIds.some((id) => id == null) || offIds.some((id) => id == null)) {
+        console.warn(
+          `[efis-adapter] button "${button.name}": missing one or more onCommands/offCommands (${button.onCommands.join(", ")} / ${button.offCommands.join(", ")}). Button will be disabled.`
+        );
+        this.unresolved.add(button.name);
+        return;
+      }
+      this._onOffCommandIds.set(button.name, { on: onIds, off: offIds });
+    } else {
+      const cmdId = commandIds.get(button.command);
+      if (cmdId == null) {
+        console.warn(`[efis-adapter] button "${button.name}": missing command ${button.command}. Button will be disabled.`);
+        this.unresolved.add(button.name);
+        return;
+      }
+      this._commandIds.set(button.name, cmdId);
+    }
+
     this.state.set(button.name, false);
+    if (drId == null) return;
     this.client.subscribeDataref(drId, (raw) => {
       // Some of these datarefs animate smoothly between 0 and 1 (X-Plane's
       // own light-fade transition) rather than flipping instantly — a
       // midpoint threshold, not an exact-zero/nonzero check, is what
       // keeps the previous selection's "off" in sync with the new
-      // selection's "on" instead of lagging behind it.
-      const lit = button.invert ? Number(raw) < 0.5 : Number(raw) >= 0.5;
+      // selection's "on" instead of lagging behind it. litValue is for the
+      // different case of several buttons sharing one dataref (e.g.
+      // AP1/AP2 on the same autopilot_12_status) — there, "lit" means an
+      // exact match, not a threshold.
+      const value = Number(raw);
+      const lit = button.litValue != null ? Math.round(value) === button.litValue : button.invert ? value < 0.5 : value >= 0.5;
       this.state.set(button.name, lit);
       this.onStateChange?.(button.name);
     });
@@ -221,6 +274,12 @@ export class EfisAdapter {
   }
 
   press(name) {
+    const onOff = this._onOffCommandIds.get(name);
+    if (onOff) {
+      const ids = this.isLit(name) ? onOff.off : onOff.on;
+      for (const id of ids) this.client.activateCommand(id);
+      return true;
+    }
     const id = this._commandIds.get(name);
     if (id == null) {
       console.warn(`[efis-adapter] "${name}" has no resolved command; ignoring press`);
@@ -407,6 +466,6 @@ export class EfisAdapter {
   }
 
   isAvailable(name) {
-    return this._commandIds.has(name);
+    return this._commandIds.has(name) || this._onOffCommandIds.has(name);
   }
 }

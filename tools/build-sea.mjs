@@ -39,15 +39,12 @@ const BUILD_DIR = path.join(ROOT, "build-sea");
 const ASSETS = [
   "index.html",
   "css/mcdu.css",
-  "css/efis.css",
+  "vendor/fcu-instruments.js",
   "fonts/B612Mono-Regular.ttf",
-  "fonts/B612-Regular.ttf",
-  "fonts/B612-Bold.ttf",
   "fonts/OFL.txt",
-  "fonts/DSEG7Modern-Bold.ttf",
-  "fonts/DSEG-OFL.txt",
   "config/profiles/default-fms.json",
   "config/profiles/efis-a333.json",
+  "config/profiles/fcu-a333.json",
   "src/app.js",
   "src/mcdu-adapter.js",
   "src/mcdu-keypad.js",
@@ -55,12 +52,9 @@ const ASSETS = [
   "src/xplane-client.js",
   "src/efis-adapter.js",
   "src/efis-panel.js",
+  "src/fcu-panel.js",
   "src/readout-formats.js",
-  "src/rotary-encoder.js",
-  "src/rotary-scale.js",
-  "src/compass-scale.js",
-  "src/arc-toggle.js",
-  "src/detent-angles.js",
+  "src/panel-autoscale.js",
 ];
 
 const platform = process.platform;

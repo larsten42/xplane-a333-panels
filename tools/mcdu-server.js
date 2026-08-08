@@ -356,6 +356,28 @@ server.on("upgrade", (req, socket, head) => {
   socket.on("error", () => upstream.close());
 });
 
+// Without this, EADDRINUSE (by far the most common startup failure — either
+// a second copy of this same server, or some unrelated thing already on
+// the port) surfaces as a raw uncaught-exception stack trace pointing into
+// node:net internals, which doesn't say what's actually wrong or what to do
+// about it.
+server.on("error", (err) => {
+  if (err.code !== "EADDRINUSE") {
+    console.error(`Failed to start the server: ${err.message}`);
+    process.exit(1);
+  }
+  const launcher = isSea() ? `./${path.basename(process.execPath)}` : "node tools/mcdu-server.js";
+  const checkCmd =
+    process.platform === "win32" ? `netstat -ano | findstr :${PORT}` : `lsof -i :${PORT}`;
+  console.error(`\nPort ${PORT} is already in use.\n`);
+  console.error(`Either another copy of this server is already running, or something else on`);
+  console.error(`this machine is using port ${PORT}. To see what:`);
+  console.error(`  ${checkCmd}\n`);
+  console.error(`Or just start this on a different port:`);
+  console.error(`  ${launcher} ${PORT + 1}\n`);
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`MCDU server: http://localhost:${PORT}  (and on your LAN IP, for tablets)`);
   console.log(`Proxying /api/* to X-Plane at ${XPLANE_HOST}:${XPLANE_PORT}`);

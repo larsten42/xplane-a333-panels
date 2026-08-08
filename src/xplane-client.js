@@ -30,9 +30,9 @@ export class XPlaneClient {
     this._nextReqId = 1;
     /** @type {Map<number, {resolve: Function, reject: Function}>} */
     this._pending = new Map();
-    /** @type {Map<number, (value: any) => void>} callbacks keyed by dataref id */
+    /** @type {Map<number, Set<(value: any) => void>>} callback sets keyed by dataref id — a Set, not one slot, because two profile entries can legitimately share a ref (e.g. AP1/AP2 both reading autopilot_12_status via litValue) and a single slot would let the second subscriber silently clobber the first's callback */
     this._datarefListeners = new Map();
-    /** @type {Map<number, (isActive: boolean) => void>} callbacks keyed by command id */
+    /** @type {Map<number, Set<(isActive: boolean) => void>>} callback sets keyed by command id, same reasoning as _datarefListeners */
     this._commandListeners = new Map();
 
     this.onStatusChange = null; // (status: 'connecting'|'open'|'closed'|'error', detail?) => void
@@ -81,6 +81,26 @@ export class XPlaneClient {
     this._allCache[kind] ??= await this.listAll(kind);
     for (const entry of this._allCache[kind]) {
       if (wanted.has(entry.name)) map.set(entry.name, entry.id);
+    }
+
+    // Names the bulk list didn't have: X-Plane sometimes accepts a
+    // single-name filter query for a name that never appears in the bulk
+    // list under that exact string — confirmed live 2026-08-08,
+    // sim/autopilot/speed_hold resolves this way to the same id as
+    // sim/autopilot/level_change (an apparent legacy alias for the same
+    // underlying command, invisible in the bulk listing but real to the
+    // single-name lookup — a proper 404 on an actually-invalid name, 200
+    // on this). Tried one at a time rather than batched, since a
+    // multi-name filter 404s entirely if even one name in it is invalid
+    // (see this method's own doc above) — single-name queries don't have
+    // that failure mode.
+    for (const name of names) {
+      if (map.has(name)) continue;
+      const res = await fetch(`${this.restBase}/${kind}?filter[name]=${encodeURIComponent(name)}`);
+      if (!res.ok) continue;
+      const body = await res.json();
+      const id = body.data?.[0]?.id;
+      if (id != null) map.set(name, id);
     }
     return map;
   }
@@ -150,8 +170,7 @@ export class XPlaneClient {
     if (msg.type === "dataref_update_values" && msg.data) {
       for (const [idStr, rawValue] of Object.entries(msg.data)) {
         const id = Number(idStr);
-        const listener = this._datarefListeners.get(id);
-        if (listener) listener(rawValue);
+        for (const listener of this._datarefListeners.get(id) ?? []) listener(rawValue);
       }
       return;
     }
@@ -159,8 +178,7 @@ export class XPlaneClient {
     if (msg.type === "command_update_is_active" && msg.data) {
       for (const [idStr, isActive] of Object.entries(msg.data)) {
         const id = Number(idStr);
-        const listener = this._commandListeners.get(id);
-        if (listener) listener(Boolean(isActive));
+        for (const listener of this._commandListeners.get(id) ?? []) listener(Boolean(isActive));
       }
       return;
     }
@@ -179,23 +197,35 @@ export class XPlaneClient {
    * @param {(value: any) => void} onValue
    */
   subscribeDataref(id, onValue) {
-    this._datarefListeners.set(id, onValue);
-    this._send("dataref_subscribe_values", { datarefs: [{ id }] });
+    const isFirst = !this._datarefListeners.has(id);
+    if (isFirst) this._datarefListeners.set(id, new Set());
+    this._datarefListeners.get(id).add(onValue);
+    if (isFirst) this._send("dataref_subscribe_values", { datarefs: [{ id }] });
   }
 
-  unsubscribeDataref(id) {
-    this._datarefListeners.delete(id);
-    this._send("dataref_unsubscribe_values", { datarefs: [{ id }] });
+  unsubscribeDataref(id, onValue) {
+    const listeners = this._datarefListeners.get(id);
+    listeners?.delete(onValue);
+    if (listeners && listeners.size === 0) {
+      this._datarefListeners.delete(id);
+      this._send("dataref_unsubscribe_values", { datarefs: [{ id }] });
+    }
   }
 
   subscribeCommand(id, onIsActive) {
-    this._commandListeners.set(id, onIsActive);
-    this._send("command_subscribe_is_active", { commands: [{ id }] });
+    const isFirst = !this._commandListeners.has(id);
+    if (isFirst) this._commandListeners.set(id, new Set());
+    this._commandListeners.get(id).add(onIsActive);
+    if (isFirst) this._send("command_subscribe_is_active", { commands: [{ id }] });
   }
 
-  unsubscribeCommand(id) {
-    this._commandListeners.delete(id);
-    this._send("command_unsubscribe_is_active", { commands: [{ id }] });
+  unsubscribeCommand(id, onIsActive) {
+    const listeners = this._commandListeners.get(id);
+    listeners?.delete(onIsActive);
+    if (listeners && listeners.size === 0) {
+      this._commandListeners.delete(id);
+      this._send("command_unsubscribe_is_active", { commands: [{ id }] });
+    }
   }
 
   setDatarefValue(id, value) {
