@@ -15,13 +15,10 @@ keyboard.
 <td align="center" width="50%"><img src="docs/screenshots/photo_tablet.jpg" alt="MCDU running on a tablet, physical photo"><br>MCDU — Tablet</td>
 </tr>
 <tr>
-<td align="center" width="50%"><img src="docs/screenshots/screenshot_efis_browser.jpg" alt="EFIS panel in a desktop browser"><br>EFIS — Desktop</td>
-<td align="center" width="50%"><img src="docs/screenshots/screenshot_efis_cellphone.jpg" alt="EFIS panel on a phone, held up next to the simulator's own EFIS display"><br>EFIS — Phone</td>
+<td align="center" width="50%"><img src="docs/screenshots/screenshot_rel3_efis.jpg" alt="EFIS control panel with live data from a connected X-Plane"><br>EFIS</td>
+<td align="center" width="50%"><img src="docs/screenshots/screenshot_rel3_fcu.jpg" alt="FCU panel with live data from a connected X-Plane"><br>FCU</td>
 </tr>
 </table>
-
-<!-- FCU screenshots still needed — the panel itself is fully wired, just
-     not yet photographed for the README. -->
 
 All three panels live on the same page, switched with the **Panel**
 selector.
