@@ -108,6 +108,11 @@ wiring up a new profile.
 
 ## Known limitations
 
+- The FCU panel is the newest of the three and still a work in progress:
+  every button, knob, and display is wired to a real command/dataref and
+  usable, but it's had less real-flight mileage than MCDU/EFIS and a
+  couple of annunciators (LVLCH) have no confirmed driving dataref yet —
+  see the Roadmap below for the current list.
 - Only the stock/default X-Plane FMS and EFIS are supported today. Add-on
   airliners need their own profile (see below); buttons/keys whose command
   doesn't resolve are disabled rather than silently failing, so a missing

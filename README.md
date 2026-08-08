@@ -35,6 +35,12 @@ selector.
 **Scope:** verified against the default/stock A330 only. Add-on airliners
 need their own profile — see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
+**FCU status:** every button, knob, and display is wired to real X-Plane
+commands/datarefs and usable today, but it's newer and less battle-tested
+than MCDU/EFIS — a couple of annunciators (LVLCH) have no confirmed
+driving dataref yet. See [`ARCHITECTURE.md`](ARCHITECTURE.md)'s roadmap for
+the current list.
+
 ## Getting started
 
 [**Download the latest release**](https://github.com/larsten42/xplane-a333-panels/releases/latest/download/xplane-a333-panels.zip)
