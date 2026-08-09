@@ -122,9 +122,17 @@ export class XPlaneClient {
 
   // ------------------------------------------------------------ Socket ----
 
-  connectSocket() {
+  /**
+   * @param {string} [panelHint] - which panel was selected when connecting
+   *   (mcdu/efis/fcu), purely for the operator console's client list (see
+   *   tools/mcdu-server.js) — not meaningful to X-Plane itself, and since
+   *   all panels share this one connection, it reflects the panel active
+   *   at connect time, not live switches afterward.
+   */
+  connectSocket(panelHint) {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.wsUrl);
+      const url = panelHint ? `${this.wsUrl}?panel=${encodeURIComponent(panelHint)}` : this.wsUrl;
+      const ws = new WebSocket(url);
       this.ws = ws;
       this._setStatus("connecting");
 

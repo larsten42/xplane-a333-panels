@@ -219,7 +219,7 @@ async function connect() {
     return;
   }
 
-  await client.connectSocket();
+  await client.connectSocket(els.panelSelect.value);
 
   const [mcduProfile, efisProfile, fcuProfile] = await Promise.all([
     fetch("./config/profiles/default-fms.json").then((r) => r.json()),

@@ -17,8 +17,14 @@ const DIST = path.join(ROOT, "dist");
 // Relative to ROOT. Directories are copied recursively as-is.
 const INCLUDE = [
   "index.html",
+  "console.html",
+  "manifest.webmanifest",
+  "icons/icon.svg",
+  "package.json", // read by tools/mcdu-server.js to show the app version on the operator console — not shipped in the SEA build, see build-sea.mjs
   "css/mcdu.css",
+  "css/console.css",
   "vendor/fcu-instruments.js",
+  "vendor/qrcode-generator.js",
   "fonts/B612Mono-Regular.ttf",
   "fonts/OFL.txt",
   "config/profiles/default-fms.json",
@@ -34,6 +40,7 @@ const INCLUDE = [
   "src/fcu-panel.js",
   "src/readout-formats.js",
   "src/panel-autoscale.js",
+  "src/console.js",
   "tools/mcdu-server.js",
 ];
 

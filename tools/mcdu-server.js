@@ -42,11 +42,15 @@
 //   env: XPLANE_HOST (default 127.0.0.1), XPLANE_PORT (default 8086) — only
 //        needed if X-Plane runs on a different machine than this server;
 //        supported, but uncommon.
+//        MCDU_NO_OPEN_CONSOLE=1 — skip auto-opening the operator console
+//        (/console) in a browser on startup; useful running this headless.
 
 import http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isSea, getAsset } from "node:sea";
 
@@ -54,12 +58,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.argv[2]) || 5173;
 const XPLANE_HOST = process.env.XPLANE_HOST || "127.0.0.1";
 const XPLANE_PORT = Number(process.env.XPLANE_PORT) || 8086;
+const IS_DEFAULT_XPLANE_ADDRESS = XPLANE_HOST === "127.0.0.1" && XPLANE_PORT === 8086;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
@@ -137,9 +143,100 @@ async function proxyRest(req, res) {
   }
 }
 
+// ------------------------------------------------------ operator console --
+// A small status page for whoever's running the sim, not the tablet UI:
+// is the server up, is X-Plane reachable, which addresses can a device
+// connect to (with QR codes for those), and who's currently connected.
+// console.html/css/js render it; this half just supplies the data.
+
+/** Only read once at startup — package.json isn't shipped in a SEA build (see build-sea.mjs's ASSETS), so there's nothing to read there. */
+function getServerVersion() {
+  if (isSea()) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version ?? null;
+  } catch {
+    return null;
+  }
+}
+const SERVER_VERSION = getServerVersion();
+
+/** clientId -> {ip, panel, connectedAtMs} — populated/cleared in the upgrade handler below. */
+const connectedClients = new Map();
+const KNOWN_PANELS = new Set(["mcdu", "efis", "fcu"]);
+
+// IPv4-mapped-IPv6 form (::ffff:192.168.1.5), common when a socket is
+// listening on all interfaces — stripped for a readable address.
+function normalizeIp(addr) {
+  if (!addr) return "unknown";
+  return addr.startsWith("::ffff:") ? addr.slice(7) : addr;
+}
+
+function listInterfaces() {
+  const out = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const addr of addrs ?? []) {
+      if (addr.family !== "IPv4") continue;
+      out.push({ name, address: addr.address, internal: addr.internal, url: `http://${addr.address}:${PORT}` });
+    }
+  }
+  return out;
+}
+
+// Fresh on every status request rather than a background poll — this data
+// is only ever looked at by someone actively viewing the console, and a
+// short timeout keeps a downed X-Plane from ever hanging the page.
+async function checkXPlane() {
+  try {
+    const res = await fetch(`http://${XPLANE_HOST}:${XPLANE_PORT}/api/capabilities`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return { reachable: false, version: null };
+    const body = await res.json();
+    return { reachable: true, version: body["x-plane"]?.version ?? null };
+  } catch {
+    return { reachable: false, version: null };
+  }
+}
+
+async function serveConsoleStatus(req, res) {
+  const xplane = await checkXPlane();
+  const body = JSON.stringify({
+    server: { version: SERVER_VERSION, uptimeSeconds: Math.round(process.uptime()), port: PORT },
+    xplane: { host: XPLANE_HOST, port: XPLANE_PORT, isDefault: IS_DEFAULT_XPLANE_ADDRESS, ...xplane },
+    interfaces: listInterfaces(),
+    clients: [...connectedClients.values()].map((c) => ({
+      ip: c.ip,
+      panel: c.panel,
+      connectedSeconds: Math.round((Date.now() - c.connectedAtMs) / 1000),
+    })),
+  });
+  res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(body);
+}
+
+function openBrowser(url) {
+  try {
+    if (process.platform === "win32") spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+    else if (process.platform === "darwin") spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+  } catch (err) {
+    console.warn(`[console] couldn't auto-open a browser: ${err.message}`);
+  }
+}
+
 const server = http.createServer((req, res) => {
-  if (req.url.startsWith("/api/")) {
+  const urlPath = req.url.split("?")[0];
+  if (urlPath.startsWith("/api/")) {
     proxyRest(req, res);
+    return;
+  }
+  if (urlPath === "/console/status.json") {
+    serveConsoleStatus(req, res);
+    return;
+  }
+  if (urlPath === "/console" || urlPath === "/console/") {
+    req.url = "/console.html";
+    serveStatic(req, res);
     return;
   }
   serveStatic(req, res);
@@ -306,6 +403,19 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
+  // The query string (?panel=...) is our own operator-console bookkeeping,
+  // not something X-Plane's own websocket endpoint needs to see — stripped
+  // before forwarding upstream, kept (and validated against a fixed set,
+  // never trusted verbatim) only for the console's client list.
+  const [upstreamPath, queryString] = req.url.split("?");
+  const rawPanel = new URLSearchParams(queryString ?? "").get("panel");
+  const panel = KNOWN_PANELS.has(rawPanel) ? rawPanel : "unknown";
+  const clientId = crypto.randomUUID();
+  connectedClients.set(clientId, { ip: normalizeIp(socket.remoteAddress), panel, connectedAtMs: Date.now() });
+  const forgetClient = () => connectedClients.delete(clientId);
+  socket.on("close", forgetClient);
+  socket.on("error", forgetClient);
+
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\n" +
       "Upgrade: websocket\r\n" +
@@ -315,7 +425,7 @@ server.on("upgrade", (req, socket, head) => {
 
   let upstreamOpen = false;
   const pendingToUpstream = [];
-  const upstream = connectUpstream(XPLANE_HOST, XPLANE_PORT, req.url, {
+  const upstream = connectUpstream(XPLANE_HOST, XPLANE_PORT, upstreamPath, {
     onOpen: () => {
       upstreamOpen = true;
       for (const data of pendingToUpstream.splice(0)) upstream.send(data);
@@ -382,4 +492,7 @@ server.listen(PORT, () => {
   console.log(`MCDU server: http://localhost:${PORT}  (and on your LAN IP, for tablets)`);
   console.log(`Proxying /api/* to X-Plane at ${XPLANE_HOST}:${XPLANE_PORT}`);
   console.log("Serving static files from", ROOT);
+  const consoleUrl = `http://localhost:${PORT}/console`;
+  console.log(`Operator console: ${consoleUrl}`);
+  if (!process.env.MCDU_NO_OPEN_CONSOLE) openBrowser(consoleUrl);
 });

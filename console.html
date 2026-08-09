@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Operator Console — X-Plane A330 Panels</title>
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="stylesheet" href="./css/console.css" />
+  <!-- Defines a global qrcode() function — see vendor/README.md. Loaded as
+       a plain script (not a module) since console.js needs it as a global,
+       same pattern as vendor/fcu-instruments.js elsewhere in this app. -->
+  <script src="./vendor/qrcode-generator.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Operator Console</h1>
+    <span id="last-updated" class="muted"></span>
+  </header>
+
+  <section class="cards">
+    <div class="card">
+      <h2>Server</h2>
+      <dl>
+        <dt>Status</dt><dd class="status-ok">Running</dd>
+        <dt>Version</dt><dd id="server-version">—</dd>
+        <dt>Uptime</dt><dd id="server-uptime">—</dd>
+        <dt>Port</dt><dd id="server-port">—</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h2>X-Plane</h2>
+      <dl>
+        <dt>Status</dt><dd id="xplane-status">—</dd>
+        <dt>Address</dt><dd id="xplane-address">—</dd>
+        <dt>Version</dt><dd id="xplane-version">—</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <h2>Connect from a device</h2>
+    <p class="muted">Scan a code, or open the link, from the same network.</p>
+    <div id="interfaces" class="interfaces"></div>
+  </section>
+
+  <section>
+    <h2>Connected clients (<span id="client-count">0</span>)</h2>
+    <table id="clients-table">
+      <thead>
+        <tr><th>IP</th><th>Panel</th><th>Connected</th></tr>
+      </thead>
+      <tbody id="clients-body"></tbody>
+    </table>
+    <p id="no-clients" class="muted" hidden>No devices connected yet.</p>
+  </section>
+
+  <script type="module" src="./src/console.js"></script>
+</body>
+</html>

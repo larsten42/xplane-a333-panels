@@ -1,0 +1,14 @@
+{
+  "name": "X-Plane A330 Panels",
+  "short_name": "A330 Panels",
+  "description": "MCDU, EFIS, and FCU panels for X-Plane 12's stock Airbus A330.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1e1f22",
+  "theme_color": "#1e1f22",
+  "orientation": "any",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

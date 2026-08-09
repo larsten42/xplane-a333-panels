@@ -74,12 +74,22 @@ folder it downloaded to:
 
 Then run it directly, no `node` command needed.
 
+Starting the server also opens an **operator console** in a browser tab on
+the host machine — server/X-Plane status, a QR code per network interface
+for pointing a tablet at the right address, and who's currently connected.
+
 Open the printed URL — `http://localhost:5173` on the X-Plane machine, or
 `http://<that machine's LAN IP>:5173` from a tablet — and press **Connect**.
 There's no host or port to configure; the page always talks back to
 whatever server it loaded from. Use the **Panel** selector in the top bar to
 switch between MCDU, EFIS, and FCU — all three share the one connection,
 so there's no need to reconnect when switching.
+
+On Android, Chrome's **⋮ menu → Add to Home screen** adds a shortcut with
+the app's own icon and name — quicker than retyping the URL, though it
+still opens as a normal browser tab rather than a standalone app (that
+needs HTTPS, which a LAN-only server like this doesn't have; see
+[`ARCHITECTURE.md`](ARCHITECTURE.md)).
 
 ## More information
 

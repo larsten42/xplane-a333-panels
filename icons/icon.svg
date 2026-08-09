@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- App icon — an abstracted CDU: dark bezel, glowing screen lines,
+       three keys below. No literal text (illegible at small icon sizes).
+       Same exact palette as css/mcdu.css's :root custom properties, so
+       this reads as "the same app" rather than a generic icon.
+       Content is kept inside the ~80%-diameter safe zone Android's
+       maskable-icon spec expects, so this single file works for both
+       "any" and "maskable" purposes (see manifest.webmanifest). -->
+  <rect width="192" height="192" rx="32" fill="#1e1f22"/>
+  <rect x="40" y="44" width="112" height="76" rx="8" fill="#0a0d0a" stroke="#34363b" stroke-width="4"/>
+  <rect x="52" y="58" width="56" height="9" rx="2" fill="#37c9e6"/>
+  <rect x="52" y="74" width="88" height="9" rx="2" fill="#37c9e6" opacity="0.7"/>
+  <rect x="52" y="90" width="44" height="9" rx="2" fill="#39d353"/>
+  <circle cx="60" cy="146" r="9" fill="#2b2d30" stroke="#45484d" stroke-width="2"/>
+  <circle cx="96" cy="146" r="9" fill="#2b2d30" stroke="#45484d" stroke-width="2"/>
+  <circle cx="132" cy="146" r="9" fill="#2b2d30" stroke="#45484d" stroke-width="2"/>
+</svg>

@@ -1,9 +1,9 @@
 # vendor/
 
-Third-party UI component libraries, used as-is. Nothing in here is ours to
-edit — if something about a vendored file needs to change, that change
-belongs on the upstream (Design's) side, not here, so an update stays a
-plain file swap instead of a merge.
+Third-party libraries, used as-is. Nothing in here is ours to edit — if
+something about a vendored file needs to change, that change belongs on
+the upstream side, not here, so an update stays a plain file swap instead
+of a merge.
 
 ## fcu-instruments.js
 
@@ -30,3 +30,18 @@ adapters.
 
 That's the whole process — no build step, no merge, nothing else in the
 app should need to change unless the component API itself changed.
+
+## qrcode-generator.js
+
+[Kazuhiko Arase's `qrcode-generator`](https://github.com/kazuhikoarase/qrcode-generator)
+(MIT), the readable (non-minified) `js/dist/qrcode.js` build, fetched
+2026-08-09. Pure encoding logic, no DOM/canvas rendering of its own — a
+plain `<script>` tag defines a global `qrcode(typeNumber, errorCorrectionLevel)`
+function; `console.js` calls `.addData()`/`.make()` then reads the module
+matrix via `.getModuleCount()`/`.isDark(row, col)` and draws its own SVG
+from it, so the QR codes on the operator console match the page's own
+look rather than the library's default HTML/table output (which this
+build doesn't even include — that's in the non-`dist` source, not vendored
+here since it's unused). To update: re-fetch
+`https://raw.githubusercontent.com/kazuhikoarase/qrcode-generator/master/js/dist/qrcode.js`
+over this file; the public API has been stable for years.

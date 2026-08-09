@@ -48,6 +48,63 @@ For the full X-Plane Web API protocol reference — endpoints, message
 formats, the CDU dataref layout, and some rough edges we ran into along the
 way — see `docs/xplane-web-api-notes.md`.
 
+## Operator console
+
+`http://<server>:<port>/console` — a status page for whoever's running the
+sim on the host machine, separate from the tablet-facing panels
+themselves. `tools/mcdu-server.js` opens it in a browser automatically on
+startup (set `MCDU_NO_OPEN_CONSOLE=1` to skip that, e.g. running headless).
+Shows:
+
+- Server status, version, uptime, and port.
+- Whether X-Plane is reachable (a fresh check against `/api/capabilities`
+  on every page load — not a cached/background poll), its reported
+  version, and whether `XPLANE_HOST`/`XPLANE_PORT` are non-default.
+- Every bound network interface as a clickable link and a QR code (skipped
+  for `localhost` itself — nothing to usefully scan there), for pointing a
+  tablet at the right address without typing it in.
+- Currently connected clients — IP and which panel was selected when they
+  connected (not live-tracked after that, since all three panels share one
+  websocket connection per tab; see `xplane-client.js`'s `connectSocket()`).
+
+`console.html`/`css/console.css`/`src/console.js` render it, polling
+`tools/mcdu-server.js`'s own `/console/status.json` every few seconds —
+not an X-Plane endpoint, just this server's internal state. QR codes are
+rendered client-side as SVG from `vendor/qrcode-generator.js`'s module
+matrix (see `vendor/README.md`), not the vendored library's own default
+output, so they match the page's look.
+
+## Progressive Web App
+
+`manifest.webmanifest` + `icons/icon.svg` give the MCDU/EFIS/FCU page
+(`index.html`, not the operator console) a proper icon and name for
+Android's Chrome "Add to Home Screen" — confirmed on a real device:
+without HTTPS (see below), Chrome doesn't treat this as an installable
+PWA, so "Add to Home Screen" falls back to a plain bookmark shortcut. It
+gets the right icon and label, but tapping it opens a normal Chrome tab,
+address bar and all — not the standalone, chrome-less window a real
+installed PWA gets. That fallback ignores `display: standalone` in the
+manifest entirely; there's no partial credit for having a manifest
+without also clearing the installability bar.
+
+This is the manifest half only, deliberately — a full installable PWA
+(the standalone launch, a real "Install app" prompt, offline caching via
+a service worker) requires a secure context: HTTPS, or the literal
+`localhost` origin. A tablet always reaches this app over the host
+machine's LAN IP (that's the whole point of it being a separate device —
+see "How it works" above), never `localhost`, so that requirement can't
+be met without adding real HTTPS. A self-signed certificate would
+technically work but needs manually trusting on every device it's used
+from, which cuts directly against this app's "just open a URL" design —
+not pursued for that reason. See the Roadmap below.
+
+The icon is a single SVG (no PNG variants) — Android/Chrome, the
+explicitly-targeted platform, handles SVG manifest icons natively, and
+its content is kept inside the ~80%-diameter safe zone Android's
+maskable-icon spec expects. iOS Safari's PWA/manifest support is weaker
+and wasn't a goal here; if it becomes one, that's the point PNG fallbacks
+would be worth adding.
+
 ## Trying it without X-Plane running
 
 ```sh
@@ -255,10 +312,15 @@ ever replaces the vendored library, both are worth re-evaluating.
 
 ```
 index.html                        the page — MCDU + EFIS + FCU markup, Panel selector
+console.html                      operator console page — see "Operator console" above
+manifest.webmanifest              PWA manifest for index.html — see "Progressive Web App" above
+icons/icon.svg                    app icon, referenced by the manifest and both pages' favicons
 css/mcdu.css                      MCDU look, plus the shared panel-switching/autoscale layout
+css/console.css                   operator console's own plain UI look, not linked to mcdu.css
 fonts/                            B612 Mono — see "Fonts" above
 vendor/
   fcu-instruments.js                 third-party FCU+EFIS component library, used as-is — see vendor/README.md
+  qrcode-generator.js                third-party QR encoder, used as-is — see vendor/README.md
 src/
   xplane-client.js                 REST + WebSocket wrapper around X-Plane's Web API
   app.js                            wires everything together: connection UI, Panel selector
@@ -271,6 +333,7 @@ src/
   fcu-panel.js                         wires an EfisAdapter to vendor/fcu-instruments.js's <fcu-panel>
   readout-formats.js                   per-readout display-text formatting (QNH, mode/range labels, FCU windows)
   panel-autoscale.js                   fits <efis-panel>/<fcu-panel> to their container via a computed CSS transform
+  console.js                           polls/renders the operator console — no X-Plane/adapter concepts at all
 config/profiles/
   default-fms.json                  MCDU dataref/command mapping for the stock FMS
   efis-a333.json                    EFIS dataref/command mapping for the stock EFIS
@@ -299,5 +362,7 @@ tools/
   developed/tested without a running X-Plane instance too.
 - Profile picker in the UI instead of a hardcoded default, per panel.
 - A way to save a confirmed-working profile without hand-editing JSON.
-- PWA manifest for home-screen installs on tablets.
+- Full offline-installable PWA (a service worker, not just the manifest —
+  see "Progressive Web App" below for why that's a bigger step than it
+  sounds).
 - Automatic reconnect on dropped connections.

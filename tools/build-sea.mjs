@@ -38,8 +38,13 @@ const BUILD_DIR = path.join(ROOT, "build-sea");
 // this build's *main* script, not a served asset).
 const ASSETS = [
   "index.html",
+  "console.html",
+  "manifest.webmanifest",
+  "icons/icon.svg",
   "css/mcdu.css",
+  "css/console.css",
   "vendor/fcu-instruments.js",
+  "vendor/qrcode-generator.js",
   "fonts/B612Mono-Regular.ttf",
   "fonts/OFL.txt",
   "config/profiles/default-fms.json",
@@ -55,6 +60,7 @@ const ASSETS = [
   "src/fcu-panel.js",
   "src/readout-formats.js",
   "src/panel-autoscale.js",
+  "src/console.js",
 ];
 
 const platform = process.platform;

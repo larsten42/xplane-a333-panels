@@ -1,0 +1,157 @@
+/* Same dark palette as css/mcdu.css's top bar (not linked directly, to
+   keep this page's rules from picking up anything cockpit-specific) —
+   this is a status page for whoever's running the sim, not part of the
+   instrument simulation itself, so it gets its own plain UI look. */
+
+:root {
+  --bg: #1e1f22;
+  --panel-bg: #202226;
+  --border: #34363b;
+  --text: #e7e7e7;
+  --text-muted: #8a8d93;
+  --accent: #37c9e6;
+  --c-green: #39d353;
+  --c-red: #ff4d4d;
+  --c-amber: #ffb84d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 24px;
+  max-width: 900px;
+  margin-inline: auto;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+h1 {
+  font-size: 1.3rem;
+  margin: 0;
+}
+h2 {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+.muted {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+section {
+  margin-bottom: 28px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+}
+.card dt {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.card dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.status-ok { color: var(--c-green); }
+.status-bad { color: var(--c-red); }
+
+.interfaces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+.interface-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+/* QR codes need a light quiet zone around them to scan reliably — padding
+   on a white background, rather than baking margin into the SVG itself. */
+.qr-wrap {
+  background: #fff;
+  border-radius: 6px;
+  padding: 10px;
+  min-height: 20px;
+}
+.qr-wrap svg {
+  display: block;
+  width: 120px;
+  height: 120px;
+}
+.interface-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+.interface-label a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.interface-label a:hover { text-decoration: underline; }
+.interface-name {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+th, td {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+th {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--border);
+}
+td:last-child, th:last-child { font-variant-numeric: tabular-nums; }
