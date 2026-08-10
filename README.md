@@ -1,11 +1,20 @@
 # X-Plane A330 Panels
 
-Web-based cockpit panels for X-Plane 12's stock Airbus A330 — an **MCDU
-(CDU)**, an **EFIS control panel**, and an **FCU (autopilot control
-panel)**, all in one page, switched with a Panel selector in the top bar.
-Runs in any browser, no X-Plane plugin to install. Open it on a tablet on
-the same network as the sim and you have extra hardware next to your
-keyboard.
+Web-based cockpit panels for X-Plane 12's stock aircraft — a full **MCDU**,
+**EFIS**, and **FCU** set for the Airbus A330, plus **MCDU**-only support
+for the Boeing 737-800 — all in one page, switched with a **Panel**
+selector (and an **Aircraft** selector for which airframe's MCDU to use).
+Runs in any browser, no X-Plane plugin to install.
+
+## Quick start
+
+1. **Download** the [latest release](https://github.com/larsten42/xplane-a333-panels/releases/latest) — the zip (needs Node.js) or the single-file executable for your OS (needs nothing installed at all).
+2. **Run it.** A browser tab opens automatically on the X-Plane machine with everything you need: connection status and a QR code for each address it's reachable at.
+3. **Scan the QR code** with your tablet, hit **Connect**, and you're flying.
+
+No plugin, no account, no config file to hand-edit. Prefer a proper
+home-screen icon on the tablet over a browser tab? Chrome's **⋮ menu →
+Add to Home screen** adds one in a tap — see [Extras](#extras).
 
 ## Screenshots
 
@@ -20,8 +29,23 @@ keyboard.
 </tr>
 </table>
 
-All three panels live on the same page, switched with the **Panel**
-selector.
+## Status & scope
+
+- **MCDU** — Airbus A330 or Boeing 737-800, picked with the **Aircraft**
+  selector. Both are the default/stock aircraft only; add-on airliners
+  (Zibo, FlightFactor, ToLiss, ...) replace the default FMS entirely and
+  aren't supported.
+- **EFIS** and **FCU** — Airbus A330 only. Boeing's real hardware is
+  different enough (an MCP instead of an FCU, a different EFIS control
+  panel) that supporting the 737 here means a new panel design, not a
+  config change — not done, and not close.
+- **FCU** is the newest of the three panels: every button, knob, and
+  display is wired to a real command/dataref and usable, but it's had
+  less real-flight mileage than MCDU/EFIS, and a couple of annunciators
+  (LVLCH) have no confirmed driving dataref yet.
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full known-limitations
+list and the roadmap.
 
 ## Requirements
 
@@ -31,19 +55,6 @@ selector.
   which needs nothing installed at all.
 - A tablet (or any other device) on the same network, if you want to use
   this away from the X-Plane machine.
-
-**Scope:** MCDU works with the default/stock Airbus A330 or Boeing
-737-800 (an **Aircraft** selector picks which) — EFIS and FCU are Airbus
-A330 only, since Boeing's real hardware is different enough to need its
-own panel design, not just a config change. Add-on airliners (Zibo,
-FlightFactor, ToLiss, ...) aren't supported and need their own profile —
-see [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
-**FCU status:** every button, knob, and display is wired to real X-Plane
-commands/datarefs and usable today, but it's newer and less battle-tested
-than MCDU/EFIS — a couple of annunciators (LVLCH) have no confirmed
-driving dataref yet. See [`ARCHITECTURE.md`](ARCHITECTURE.md)'s roadmap for
-the current list.
 
 ## Getting started
 
@@ -78,29 +89,34 @@ folder it downloaded to:
 
 Then run it directly, no `node` command needed.
 
-Starting the server also opens an **operator console** in a browser tab on
-the host machine — server/X-Plane status, a QR code per network interface
-for pointing a tablet at the right address, and who's currently connected.
+Starting the server opens an **operator console** in a browser tab on the
+host machine, and prints the same URL to the terminal. Open the address
+it shows — `http://localhost:5173` on the X-Plane machine, or
+`http://<that machine's LAN IP>:5173` from a tablet — and press
+**Connect**. There's no host or port to configure; the page always talks
+back to whatever server it loaded from. Use the **Panel** selector in the
+top bar to switch between MCDU, EFIS, and FCU — all three share the one
+connection, so there's no need to reconnect when switching.
 
-Open the printed URL — `http://localhost:5173` on the X-Plane machine, or
-`http://<that machine's LAN IP>:5173` from a tablet — and press **Connect**.
-There's no host or port to configure; the page always talks back to
-whatever server it loaded from. Use the **Panel** selector in the top bar to
-switch between MCDU, EFIS, and FCU — all three share the one connection,
-so there's no need to reconnect when switching.
+## Extras
 
-On Android, Chrome's **⋮ menu → Add to Home screen** adds a shortcut with
-the app's own icon and name — quicker than retyping the URL, though it
-still opens as a normal browser tab rather than a standalone app (that
-needs HTTPS, which a LAN-only server like this doesn't have; see
-[`ARCHITECTURE.md`](ARCHITECTURE.md)).
+- **Operator console** (`/console`, opened automatically on server
+  start): server and X-Plane connection status, a QR code per network
+  interface for pointing a tablet at the right address without typing it
+  in, and who's currently connected.
+- **Android home-screen shortcut**: Chrome's **⋮ menu → Add to Home
+  screen** adds one with the app's own icon and name. It opens as a
+  normal browser tab rather than a standalone app — that needs HTTPS,
+  which a LAN-only server like this doesn't have (see
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) for why that's a deliberate
+  tradeoff, not an oversight).
 
 ## More information
 
 [`ARCHITECTURE.md`](ARCHITECTURE.md) covers how it works under the hood,
 building from source (including the single-executable build), the mock
 server for offline development, known limitations, interface details for
-each panel, adding support for another aircraft, the bundled fonts, project
+each panel, adding support for another aircraft, the bundled font, project
 layout, and the roadmap.
 
 For the X-Plane Web API protocol itself — endpoints, message formats, the
