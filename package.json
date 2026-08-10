@@ -1,8 +1,8 @@
 {
   "name": "xplane-a333-panels",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
-  "description": "Web/tablet cockpit panels (MCDU, EFIS, FCU) for X-Plane 12's stock Airbus A330, driven by X-Plane's built-in Web API.",
+  "description": "Web/tablet MCDU, EFIS, and FCU panels for X-Plane 12's stock Airbus A330 (MCDU also supports the stock 737-800), driven by X-Plane's built-in Web API.",
   "type": "module",
   "license": "MIT",
   "repository": {
