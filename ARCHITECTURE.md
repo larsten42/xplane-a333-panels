@@ -170,10 +170,21 @@ wiring up a new profile.
   usable, but it's had less real-flight mileage than MCDU/EFIS and a
   couple of annunciators (LVLCH) have no confirmed driving dataref yet —
   see the Roadmap below for the current list.
-- Only the stock/default X-Plane FMS and EFIS are supported today. Add-on
-  airliners need their own profile (see below); buttons/keys whose command
-  doesn't resolve are disabled rather than silently failing, so a missing
-  profile is obvious rather than confusing.
+- MCDU supports the stock A330 and 737-800 (an **Aircraft** selector picks
+  the profile); EFIS and FCU are Airbus-only — Boeing's real hardware is
+  an MCP, not an FCU, with its own different EFIS control panel, so
+  porting those is a new panel design, not a profile swap. Selecting the
+  737 greys out the EFIS/FCU panel options rather than leaving them
+  clickable into an all-unresolved panel. Add-on airliners (Zibo 737,
+  FlightFactor, ToLiss, ...) need their own profile too, for any panel —
+  they replace the default systems/avionics wholesale, entirely different
+  namespace (see below). Buttons/keys whose command doesn't resolve are
+  disabled rather than silently failing, so a missing/wrong profile entry
+  is obvious rather than confusing.
+- The 737-800 MCDU has no wired brightness control — the real hardware
+  has a rotary knob there, and nothing obviously matching it turned up in
+  a live dataref/command scan (unlike the Airbus, which uses a plain
+  press-up/down command pair). Left unwired rather than guessed.
 - `npm run mock`'s mock X-Plane server only implements the MCDU screen
   dataref — EFIS's and FCU's buttons, readouts, and knobs/levers aren't
   mocked yet, so testing either panel needs a real X-Plane instance.
@@ -231,6 +242,10 @@ wiring up a new profile.
 
 ### Shared
 
+- **Aircraft selector**: switches which MCDU profile loads (Airbus A330 /
+  Boeing 737-800) — see "Adding support for another aircraft" below.
+  Selecting the 737 disables the EFIS/FCU panel options (see "Known
+  limitations"). Takes effect on the next Connect/Reconnect, not live.
 - **Panel selector**: switches the main content between MCDU, EFIS, and
   FCU, top bar included, without dropping the connection.
 - **Full screen**: the button in the top-right hides the connection
@@ -244,7 +259,35 @@ wiring up a new profile.
 
 Each panel type reads its dataref/command mapping from its own profile
 under `config/profiles/`. The app itself isn't A330-specific under the
-hood — it currently just ships one verified aircraft's worth of profiles.
+hood — MCDU currently ships two verified profiles, EFIS/FCU one each.
+
+**MCDU is usually a low-effort add for any of X-Plane's own default
+aircraft** (not add-on airliners — see below): the default FMS/CDU is one
+shared program Laminar reuses across their own aircraft, not implemented
+per-airframe, so the `sim/FMS`/`sim/FMS2`/`sim/CDU3` command set and the
+`fms_cdu{n}_text_line{n}` screen datarefs are typically identical between
+them. `config/profiles/b738-fms.json` is a real example, added this way:
+confirmed live (firing `sim/FMS/index` and `sim/FMS/fpln` against a
+running B738 and reading back the resulting CDU page titles) that the
+keys and screen were the exact same generic system as the A330's, so the
+new profile only needed a different `keypadLayout` (the 737's bezel is
+laid out differently — 6 columns instead of 7 on the function rows, no
+dedicated brightness buttons, a smaller utility block) plus a couple of
+`label` overrides on shared keys whose 737 keycap text differs from the
+Airbus's (e.g. `FPLN`'s command is identical, but the real keycap says
+"RTE" on the 737 versus "F-PLN" on the Airbus — `McduAdapter.getKeyLabel()`
+reads an optional per-key `label` field for exactly this, falling back to
+`mcdu-keypad.js`'s own shared default label map when a profile doesn't
+specify one). Wire a new profile into the **Aircraft** selector via
+`app.js`'s `AIRCRAFT_MCDU_PROFILES` map.
+
+**Add-on airliners (Zibo 737, FlightFactor, ToLiss, PMDG, ...) are a
+different story** — they replace the default systems/avionics wholesale
+with their own custom implementation under an entirely different
+namespace (`laminar/B738/...`-style paths won't even exist the same way),
+so none of the above shortcuts apply; expect to discover everything from
+scratch with `tools/discover.mjs` the way the original A330 profiles were
+built.
 
 **MCDU** (`default-fms.json`-shaped) has four parts:
 
@@ -280,15 +323,13 @@ level parts, all keyed by a display name:
   increment/decrement commands for detent selectors) and/or `commands`
   (named push/pull commands, resolved as `"<readoutName>.<key>"`).
 
-To add e.g. the Zibo 737: duplicate the relevant profile(s), point the
-dataref templates and command names at `laminar/B738/...`, and switch which
-profile `src/app.js` loads for that panel. `tools/discover.mjs` (or the
-older `tools/smoke-test.mjs`) will help you find the real dataref and
-command names for a new aircraft. If the new aircraft's EFIS/FCU differ
-structurally from the A330's (different button/knob/lever set), you'd also
-need your own layout — either a new profile-driven consumer of the
-vendored library's lower-level pieces (`<fcu-knob>`, `<fcu-led-button>`,
-etc. — see `vendor/README.md`), or a fully custom panel.
+For an EFIS/FCU of a genuinely different aircraft (own button/knob/lever
+set, not just an Airbus-family variant): duplicate the relevant profile,
+find the real dataref/command names with `tools/discover.mjs` (or the
+older `tools/smoke-test.mjs`), and if the physical layout differs from the
+A330's too, you'd also need your own panel — either a new profile-driven
+consumer of the vendored library's lower-level pieces (`<fcu-knob>`,
+`<fcu-led-button>`, etc. — see `vendor/README.md`), or a fully custom one.
 
 ## Fonts
 
@@ -335,9 +376,10 @@ src/
   panel-autoscale.js                   fits <efis-panel>/<fcu-panel> to their container via a computed CSS transform
   console.js                           polls/renders the operator console — no X-Plane/adapter concepts at all
 config/profiles/
-  default-fms.json                  MCDU dataref/command mapping for the stock FMS
-  efis-a333.json                    EFIS dataref/command mapping for the stock EFIS
-  fcu-a333.json                     FCU dataref/command mapping for the stock FCU
+  default-fms.json                  MCDU dataref/command mapping for the stock A330's FMS
+  b738-fms.json                     MCDU dataref/command mapping for the stock 737-800's FMS
+  efis-a333.json                    EFIS dataref/command mapping for the stock EFIS (Airbus only)
+  fcu-a333.json                     FCU dataref/command mapping for the stock FCU (Airbus only)
 docs/xplane-web-api-notes.md      protocol reference notes + sources
 tools/
   mcdu-server.js                     serves the app + proxies /api/* to X-Plane

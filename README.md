@@ -32,8 +32,12 @@ selector.
 - A tablet (or any other device) on the same network, if you want to use
   this away from the X-Plane machine.
 
-**Scope:** verified against the default/stock A330 only. Add-on airliners
-need their own profile — see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+**Scope:** MCDU works with the default/stock Airbus A330 or Boeing
+737-800 (an **Aircraft** selector picks which) — EFIS and FCU are Airbus
+A330 only, since Boeing's real hardware is different enough to need its
+own panel design, not just a config change. Add-on airliners (Zibo,
+FlightFactor, ToLiss, ...) aren't supported and need their own profile —
+see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 **FCU status:** every button, knob, and display is wired to real X-Plane
 commands/datarefs and usable today, but it's newer and less battle-tested

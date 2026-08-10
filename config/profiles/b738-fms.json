@@ -1,11 +1,10 @@
 {
-  "id": "xplane12-default-fms",
-  "aircraft": "Airbus A330",
-  "label": "X-Plane 12 default FMS/MCDU",
-  "description": "Screen and keypad mapping for X-Plane 12's built-in default FMS, confirmed live against a running X-Plane 12.4.3 with the stock Airbus A330 loaded (2026-08-04, via tools/smoke-test.mjs). Command names live under sim/FMS (CDU1), sim/FMS2 (CDU2), sim/CDU3 (CDU3) — same key set, three different prefixes, hence commandPrefixByCdu below. Re-run the smoke test on other default aircraft before trusting this unchanged; add-on airliners (Zibo 737, FlightFactor, ToLiss, ...) use entirely different, aircraft-specific namespaces.",
+  "id": "xplane12-b738-fms",
+  "aircraft": "Boeing 737-800",
+  "label": "X-Plane 12 default 737-800 FMS/CDU",
+  "description": "Screen and keypad mapping for X-Plane 12's built-in default FMS, confirmed live against a running X-Plane 12.4.3 with the stock Boeing 737-800 (ICAO B738) loaded (2026-08-10). Same generic sim/FMS / sim/FMS2 / sim/CDU3 command set and screen datarefs as default-fms.json (the default FMS/CDU program is shared across Laminar's own default aircraft, not implemented per-airframe) — confirmed by firing sim/FMS/index and sim/FMS/fpln live and reading back the resulting CDU page titles (INDEX page was already showing; fpln brought up the ACT FPLN/ROUTE page, matching the 737's real 'RTE' key). Only the physical bezel layout and a couple of button labels differ from the Airbus profile; see keypadLayout below and each key's optional 'label' override. This is NOT the same as Zibo's 737 addon, which replaces the default systems/avionics wholesale with its own custom implementation under an entirely different namespace — this profile only applies to the bare Laminar-default 737-800.",
 
   "screen": {
-    "_note": "X-Plane exposes 16 text/style dataref slots (line0..line15), but the real CDU only ever renders 14 (title + 6 label/data pairs + scratchpad) — lines 14/15 were consistently blank in live captures. Rendering all 16 anyway just adds two rows of dead black space at the bottom.",
     "lines": 14,
     "cols": 24,
     "textDatarefTemplate": "sim/cockpit2/radios/indicators/fms_cdu{cdu}_text_line{line}",
@@ -18,8 +17,7 @@
     "3": "sim/CDU3"
   },
 
-  "_note_on_verified_flag": "verified:true means this exact suffix (under the CDU's prefix above) was seen in a live X-Plane 12.4.3 command list on 2026-08-04. Buttons whose composed command still fails to resolve at connect time (e.g. a future X-Plane version renames something) are disabled in the UI rather than silently doing nothing.",
-  "_note_on_brightness_group": "keys.brightness (BRT/DIM) is the one exception to commandPrefixByCdu: unlike everything else in this file, laminar/A333/buttons/fmsN_brightness_up/dn is Airbus-specific (not a generic sim/FMS* name), found alongside the keypad commands during the same live scan. Its entries use commandTemplate ({cdu} substituted directly) instead of the prefix+command composition.",
+  "_note_on_brightness": "No CDU brightness command/dataref found for the 737 yet — the real hardware has a rotary BRT knob here (not up/down buttons like the Airbus's laminar/A333/buttons/fmsN_brightness_up/dn), and nothing under sim/FMS*, laminar/B738/*, or the generic sim/cockpit2/*/instrument_brightness_ratio* datarefs obviously matched it in a live scan. Left unwired rather than guessed — see ARCHITECTURE.md's roadmap.",
 
   "keys": {
     "numeric": {
@@ -89,8 +87,8 @@
       "R6": { "command": "ls_6r", "verified": true }
     },
     "function": {
-      "INDEX": { "command": "index", "verified": true },
-      "FPLN": { "command": "fpln", "verified": true },
+      "INDEX": { "command": "index", "verified": true, "label": "INIT\nREF" },
+      "FPLN": { "command": "fpln", "verified": true, "label": "RTE" },
       "CLB": { "command": "clb", "verified": true },
       "CRZ": { "command": "crz", "verified": true },
       "DES": { "command": "des", "verified": true },
@@ -104,9 +102,9 @@
       "DATA": { "command": "data", "verified": true },
       "FUEL_PRED": { "command": "fuel_pred", "verified": true },
       "MENU": { "command": "menu", "verified": true },
-      "NAVRAD": { "command": "navrad", "verified": true },
-      "PREV": { "command": "prev", "verified": true },
-      "NEXT": { "command": "next", "verified": true },
+      "NAVRAD": { "command": "navrad", "verified": true, "label": "NAV\nRAD" },
+      "PREV": { "command": "prev", "verified": true, "label": "PREV\nPAGE" },
+      "NEXT": { "command": "next", "verified": true, "label": "NEXT\nPAGE" },
       "PERF": { "command": "perf", "verified": true },
       "PROG": { "command": "prog", "verified": true },
       "SEC_FPLN": { "command": "sec_fpln", "verified": true },
@@ -115,28 +113,23 @@
       "LEGS": { "command": "legs", "verified": true },
       "CDU_POPUP": { "command": "CDU_popup", "verified": true },
       "CDU_POPOUT": { "command": "CDU_popout", "verified": true }
-    },
-    "brightness": {
-      "BRT": { "commandTemplate": "laminar/A333/buttons/fms{cdu}_brightness_up", "verified": true },
-      "DIM": { "commandTemplate": "laminar/A333/buttons/fms{cdu}_brightness_dn", "verified": true }
     }
   },
 
   "keypadLayout": {
-    "_note": "Physical bezel layout, keyed by the same key names as `keys` above (grouping there is just for command-resolution bookkeeping; positions here are purely presentational). Matches a screenshot of the real X-Plane default Airbus MCDU keypad (2026-08-04). \"\" = a real, visible, unlabeled/inert keycap on the bezel (e.g. next to AIRPORT). Four separate, independently-styled, clean-rectangle blocks (functionBlock/utilityBlock/numericBlock/alphaBlock) rather than one grid padded with nulls to force a shape it isn't — utilityBlock+numericBlock stack in a column beside alphaBlock, all left-aligned so columns still line up (see css/mcdu.css .mcdu-keypad*) without needing filler cells.",
+    "_note": "Physical bezel layout as described live against a running B738 (2026-08-10) — 6 columns on the two function rows (Airbus has 7: no dedicated brightness buttons here, just a knob — see _note_on_brightness — rendered as an inert decorative keycap for now), and no UP/DOWN or AIRPORT keys in the utility block (2x2, not Airbus's 2x3). Alpha/numeric blocks are the same as the Airbus bezel except the alpha block's bottom row.",
     "functionBlock": {
-      "cols": 7,
+      "cols": 6,
       "rows": [
-        ["DIR_INTC", "PROG", "PERF", "INDEX", "DATA", "", "BRT"],
-        ["FPLN", "NAVRAD", "FUEL_PRED", "SEC_FPLN", "ATC_COMM", "MENU", "DIM"]
+        ["INDEX", "FPLN", "CLB", "CRZ", "DES", ""],
+        ["DIR_INTC", "LEGS", "DEP_ARR", "HOLD", "PROG", "EXEC"]
       ]
     },
     "utilityBlock": {
       "cols": 2,
       "rows": [
-        ["AIRPORT", ""],
-        ["PREV", "UP"],
-        ["NEXT", "DOWN"]
+        ["FIX", "NAVRAD"],
+        ["PREV", "NEXT"]
       ]
     },
     "numericBlock": {
@@ -156,7 +149,7 @@
         ["K", "L", "M", "N", "O"],
         ["P", "Q", "R", "S", "T"],
         ["U", "V", "W", "X", "Y"],
-        ["Z", "SLASH", "SP", "OVERFLY", "CLR"]
+        ["Z", null, "DEL", "SLASH", "CLR"]
       ]
     }
   }

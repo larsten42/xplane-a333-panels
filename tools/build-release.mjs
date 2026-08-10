@@ -28,6 +28,7 @@ const INCLUDE = [
   "fonts/B612Mono-Regular.ttf",
   "fonts/OFL.txt",
   "config/profiles/default-fms.json",
+  "config/profiles/b738-fms.json",
   "config/profiles/efis-a333.json",
   "config/profiles/fcu-a333.json",
   "src/app.js",

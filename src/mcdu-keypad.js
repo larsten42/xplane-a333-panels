@@ -108,7 +108,7 @@ export class McduKeypad {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "mcdu-key";
-    btn.textContent = keyLabel(keyName);
+    btn.textContent = this.adapter.getKeyLabel(keyName) ?? keyLabel(keyName);
     btn.dataset.key = keyName;
     // pointerdown, not click: lower latency and one event for mouse+touch+pen alike
     btn.addEventListener("pointerdown", (ev) => {

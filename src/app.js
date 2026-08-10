@@ -17,8 +17,20 @@ const STORAGE_KEY = "mcdu.connection";
 const THEME_KEY = "mcdu.theme";
 const BAR_HIDDEN_KEY = "mcdu.barHidden";
 const PANEL_KEY = "mcdu.panel";
+const AIRCRAFT_KEY = "mcdu.aircraft";
+
+// EFIS/FCU only have a profile for the Airbus — see ARCHITECTURE.md's
+// "Adding support for another aircraft" for why the 737's MCDU profile was
+// a low-effort add (X-Plane's default FMS/CDU is one shared program) while
+// EFIS/FCU are a much bigger, deliberately out-of-scope undertaking (real
+// hardware differs entirely — Boeing has an MCP, not an FCU).
+const AIRCRAFT_MCDU_PROFILES = {
+  a333: "./config/profiles/default-fms.json",
+  b738: "./config/profiles/b738-fms.json",
+};
 
 const els = {
+  aircraftSelect: document.getElementById("aircraft-select"),
   panelSelect: document.getElementById("panel-select"),
   cdu: document.getElementById("conn-cdu"),
   connectBtn: document.getElementById("conn-connect"),
@@ -56,6 +68,11 @@ restoreConnectionForm();
 restoreTheme();
 restoreBarVisibility();
 restorePanel();
+// After restorePanel(), not before — it needs the *persisted* panel choice
+// already loaded so it can correct a stale one (e.g. EFIS selected from a
+// previous Airbus session, now invalid because the restored aircraft is
+// the 737) rather than checking against the <select>'s unloaded default.
+restoreAircraft();
 
 // Otherwise <fcu-panel>/<efis-panel> show the vendored components' own
 // baked-in demo values from page load until connect() actually wires them
@@ -149,6 +166,31 @@ function restorePanel() {
   showPanel(panel);
 }
 
+// EFIS/FCU have no profile for anything but the Airbus (see
+// AIRCRAFT_MCDU_PROFILES above) — greyed out rather than left clickable
+// into a panel that would just show unresolved/disabled everything.
+els.aircraftSelect.addEventListener("change", () => {
+  localStorage.setItem(AIRCRAFT_KEY, els.aircraftSelect.value);
+  applyAircraftAvailability();
+});
+
+function restoreAircraft() {
+  els.aircraftSelect.value = localStorage.getItem(AIRCRAFT_KEY) ?? "a333";
+  applyAircraftAvailability();
+}
+
+function applyAircraftAvailability() {
+  const isAirbus = els.aircraftSelect.value === "a333";
+  for (const opt of els.panelSelect.options) {
+    if (opt.value === "efis" || opt.value === "fcu") opt.disabled = !isAirbus;
+  }
+  if (!isAirbus && els.panelSelect.value !== "mcdu") {
+    els.panelSelect.value = "mcdu";
+    localStorage.setItem(PANEL_KEY, "mcdu");
+    showPanel("mcdu");
+  }
+}
+
 function showPanel(panel) {
   document.body.dataset.panel = panel;
   els.panelMcdu.hidden = panel !== "mcdu";
@@ -221,10 +263,11 @@ async function connect() {
 
   await client.connectSocket(els.panelSelect.value);
 
+  const isAirbus = els.aircraftSelect.value === "a333";
   const [mcduProfile, efisProfile, fcuProfile] = await Promise.all([
-    fetch("./config/profiles/default-fms.json").then((r) => r.json()),
-    fetch("./config/profiles/efis-a333.json").then((r) => r.json()),
-    fetch("./config/profiles/fcu-a333.json").then((r) => r.json()),
+    fetch(AIRCRAFT_MCDU_PROFILES[els.aircraftSelect.value]).then((r) => r.json()),
+    isAirbus ? fetch("./config/profiles/efis-a333.json").then((r) => r.json()) : null,
+    isAirbus ? fetch("./config/profiles/fcu-a333.json").then((r) => r.json()) : null,
   ]);
 
   const mcduAdapter = new McduAdapter(client, mcduProfile, cduIndex);
@@ -241,19 +284,29 @@ async function connect() {
   mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.alphaBlock, els.blockAlpha);
   mcduKeypad.refreshAvailability();
 
-  const efisAdapter = new EfisAdapter(client, efisProfile);
-  await efisAdapter.connect();
-  wireEfisPanel(efisAdapter);
+  // No EFIS/FCU profile for anything but the Airbus yet — see
+  // AIRCRAFT_MCDU_PROFILES above. Those panel options are already disabled
+  // in that case (applyAircraftAvailability()), and blankFcuPanel()/
+  // blankEfisPanel() from startup already leave both panels blank rather
+  // than stale demo data.
+  let efisAdapter = null;
+  let fcuAdapter = null;
+  if (isAirbus) {
+    efisAdapter = new EfisAdapter(client, efisProfile);
+    await efisAdapter.connect();
+    wireEfisPanel(efisAdapter);
 
-  const fcuAdapter = new EfisAdapter(client, fcuProfile);
-  await fcuAdapter.connect();
-  wireFcuPanel(fcuAdapter);
+    fcuAdapter = new EfisAdapter(client, fcuProfile);
+    await fcuAdapter.connect();
+    wireFcuPanel(fcuAdapter);
+  }
 
   // Re-applies keyboard-input attachment for whichever panel is currently
   // selected, now that mcduKeypad actually exists.
   showPanel(els.panelSelect.value);
 
-  const unresolvedCount = mcduAdapter.unresolvedKeys.size + efisAdapter.unresolved.size + fcuAdapter.unresolved.size;
+  const unresolvedCount =
+    mcduAdapter.unresolvedKeys.size + (efisAdapter?.unresolved.size ?? 0) + (fcuAdapter?.unresolved.size ?? 0);
   if (unresolvedCount > 0) {
     setStatus("open", `connected, but ${unresolvedCount} item(s) didn't resolve — see console`);
   } else {
