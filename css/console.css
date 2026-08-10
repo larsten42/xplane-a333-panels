@@ -101,24 +101,37 @@ section {
   text-align: center;
 }
 /* QR codes need a light quiet zone around them to scan reliably — padding
-   on a white background, rather than baking margin into the SVG itself. */
+   on a white background, rather than baking margin into the SVG itself.
+   Fixed size regardless of content: internal interfaces (localhost) have
+   no QR drawn into this at all (nothing useful to scan there), and this
+   keeps that box the same size as the real ones rather than collapsing. */
 .qr-wrap {
   background: #fff;
   border-radius: 6px;
-  padding: 10px;
-  min-height: 20px;
+  width: 140px;
+  height: 140px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .qr-wrap svg {
   display: block;
   width: 120px;
   height: 120px;
 }
+/* Grid rows stretch every card to the tallest one's height (see
+   .interfaces), so a shorter label (e.g. localhost's) would otherwise sit
+   right under its QR box while a longer, wrapped one pushes the row
+   taller — margin-top:auto pins every label to the bottom of its card
+   instead, so they line up across the row regardless. */
 .interface-label {
   display: flex;
   flex-direction: column;
   gap: 2px;
   font-size: 0.85rem;
   word-break: break-all;
+  margin-top: auto;
 }
 .interface-label a {
   color: var(--accent);
