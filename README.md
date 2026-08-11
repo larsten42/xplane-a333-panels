@@ -28,6 +28,9 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
 <td align="center" width="50%"><img src="docs/screenshots/screenshot_rel3_efis.jpg" alt="EFIS control panel with live data from a connected X-Plane"><br>EFIS</td>
 <td align="center" width="50%"><img src="docs/screenshots/screenshot_rel3_fcu.jpg" alt="FCU panel with live data from a connected X-Plane"><br>FCU</td>
 </tr>
+<tr>
+<td align="center" colspan="2"><img src="docs/screenshots/screenshot_radio.jpg" alt="Radio panel with live COM/NAV/ADF/DME data from a connected X-Plane"><br>Radio</td>
+</tr>
 </table>
 
 ## Status & scope
