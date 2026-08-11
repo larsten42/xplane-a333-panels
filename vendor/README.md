@@ -48,6 +48,11 @@ affect the existing `<fcu-panel>`/`<efis-panel>` look. Exposes
 adapter. Loaded after fcu-instruments.js (it depends on those primitives
 being defined first).
 
+Also defines a MIC SEL transmit-select lever (`micSel()`/`setMic(n)`/
+`onMic(fn)` on the `window.radioPanel` API, 1 = COM1 / 2 = COM2) — added
+2026-08-12, reuses the existing `<fcu-lever>` primitive, no new component
+type.
+
 **To update when a new bundle arrives:** same process as fcu-instruments.js
 above — copy both `fcu-instruments.js` and `radio.js` from the new bundle
 over these two files, reload and sanity-check all three panels (the shared

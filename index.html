@@ -50,6 +50,12 @@
       </select>
     </label>
   </header>
+  <!-- Always visible, independent of .bar-hidden — #conn-status inside
+       .connection-bar disappears along with the rest of the bar (e.g.
+       flying full screen), leaving no way to notice a dropped connection
+       without bringing the bar back up. Mirrors the same status classes
+       app.js's setStatus() already sets on #conn-status. -->
+  <span id="conn-led" class="conn-led status-closed" aria-hidden="true" title="Connection status"></span>
   <button id="bar-toggle" class="bar-toggle" type="button" aria-label="Hide top bar" title="Hide top bar">▲</button>
   <button id="fullscreen-toggle" class="bar-toggle fullscreen-toggle" type="button" aria-label="Enter full screen" title="Enter full screen">⛶</button>
   <!-- Only meaningful for FCU/EFIS (see body[data-panel] rule in

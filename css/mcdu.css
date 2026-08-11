@@ -216,6 +216,14 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  /* Without this, a touch that lands a few pixels off a knob/lever's own
+     hit area (rather than a total miss, which just does nothing) falls
+     through to the browser's native pan gesture instead — reported as
+     "the whole panel moves" while trying to tune. EFIS/FCU/Radio are
+     fixed-viewport instrument panels, not scrolling content, so there's
+     nothing legitimate to pan here; MCDU isn't touched by this (separate
+     container, and its own small screens may still need to scroll). */
+  touch-action: none;
 }
 .scalable-panel > * {
   transform-origin: center center;
@@ -255,6 +263,25 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
 .status-connecting { color: var(--c-amber); }
 .status-open { color: var(--c-green); }
 .status-error { color: var(--c-red); }
+
+/* Small persistent connection indicator, on screen regardless of
+   .bar-hidden — see its own comment in index.html for why. Reuses
+   .status-closed/-connecting/-open/-error above for color rather than
+   redefining them, so the two indicators can never drift out of sync in
+   what a given state looks like. */
+.conn-led {
+  position: fixed;
+  top: 6px;
+  left: 6px;
+  z-index: 10;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 5px 1px currentColor;
+  pointer-events: none; /* informational only, never intercepts touches */
+}
+.conn-led.status-closed { box-shadow: none; }
 
 /* .mcdu-unit and .mcdu-keypad used to be direct children of <body> (which
    is display:flex; gap:12px), so that gap alone kept them apart. Wrapping

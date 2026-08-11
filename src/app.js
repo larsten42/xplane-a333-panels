@@ -7,6 +7,7 @@ import { wireEfisPanel, blankEfisPanel } from "./efis-panel.js";
 import { wireFcuPanel, blankFcuPanel } from "./fcu-panel.js";
 import { wireRadioPanel, blankRadioPanel } from "./radio-panel.js";
 import { setupAutoscale } from "./panel-autoscale.js";
+import { startWakeLock, stopWakeLock } from "./wake-lock.js";
 
 // <fcu-panel>/<efis-panel>/<radio-panel>'s native, unscaled pixel size —
 // see their own INTEGRATION.md's "Sizing" table. Needed here (not just
@@ -45,6 +46,7 @@ const els = {
   cdu: document.getElementById("conn-cdu"),
   connectBtn: document.getElementById("conn-connect"),
   status: document.getElementById("conn-status"),
+  connLed: document.getElementById("conn-led"),
   screen: document.getElementById("mcdu-screen"),
   lskLeft: document.getElementById("mcdu-lsk-left"),
   lskRight: document.getElementById("mcdu-lsk-right"),
@@ -256,6 +258,11 @@ function saveConnectionForm() {
 function setStatus(state, detail) {
   els.status.textContent = detail ? `${state}: ${detail}` : state;
   els.status.className = `status status-${state}`;
+  els.connLed.className = `conn-led status-${state}`;
+  // Keep the screen on for as long as there's a live connection to fly
+  // with — see wake-lock.js's own top comment for the HTTPS caveat.
+  if (state === "open") startWakeLock();
+  else stopWakeLock();
 }
 
 async function connect() {

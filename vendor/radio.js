@@ -29,9 +29,15 @@
        X-Plane 12.4.3 2026-08-11: isolated single presses stepped the
        standby dataref by exactly 5 every time (e.g. 123305 -> 123310),
        never 25. The previous 25 was the "everywhere but this sim" 25kHz
-       default step; this sim exposes true 8.33kHz-precision tuning. */
-    { k: 'COM1', label: 'COM 1', dp: 3, min: 118000, max: 136975, fine: 5, coarse: 1000, zero: true },
-    { k: 'COM2', label: 'COM 2', dp: 3, min: 118000, max: 136975, fine: 5, coarse: 1000, zero: true },
+       default step; this sim exposes true 8.33kHz-precision tuning.
+       max=136990, not 136975 -- walking the real fine_up_833 command
+       through the 136 decade live (2026-08-12) showed it reaches
+       136980/136985/136990 exactly like every other decade; 975 was
+       simply wrong (probably copied from the real-world ICAO ceiling for
+       the *old* 25kHz-spacing COM band, which doesn't apply once this
+       sim's true 8.33kHz-precision datarefs are in play). */
+    { k: 'COM1', label: 'COM 1', dp: 3, min: 118000, max: 136990, fine: 5, coarse: 1000, zero: true },
+    { k: 'COM2', label: 'COM 2', dp: 3, min: 118000, max: 136990, fine: 5, coarse: 1000, zero: true },
     { k: 'NAV1', label: 'NAV 1', dp: 3, min: 108000, max: 117950, fine: 50, coarse: 1000, zero: true },
     { k: 'NAV2', label: 'NAV 2', dp: 3, min: 108000, max: 117950, fine: 50, coarse: 1000, zero: true },
     { k: 'ADF', label: 'ADF', dp: -1, min: 190, max: 1750, fine: 1, coarse: 100, zero: false },
@@ -129,8 +135,18 @@
       swapButton(u, cy);
   }
 
+  /* transmit selector — horizontal lever between the COM1 and COM2 audio switches.
+     left = COM1, right = COM2. Labelled MIC SEL, as on a real audio panel. */
+  function micSel() {
+    return '<fcu-lever lever-id="mic-sel" size="44" position="left" ' +
+      'style="position:absolute;left:198px;top:402px"></fcu-lever>' +
+      cap(181, 424, '1') +
+      cap(259, 424, '2') +
+      cap(220, 462, 'MIC SEL');
+  }
+
   function audioRow() {
-    var out = rule(40, 352, 1032) + cap(556, 372, 'AUDIO SELECT', { ls: '2.4' });
+    var out = rule(40, 352, 1032) + cap(556, 372, 'AUDIO SELECT', { ls: '2.4' }) + micSel();
     AUDIO.forEach(function (a) {
       out += '<fcu-lever lever-id="' + a.id + '" vertical="true" size="44" position="' + (a.on ? 'right' : 'left') + '" ' +
         'style="position:absolute;left:' + (a.x - 22) + 'px;top:402px"></fcu-lever>' +
@@ -149,6 +165,7 @@
       this.bezelAngle = { 1: 0, 2: 0 };
       this.fineAngle = { 1: 0, 2: 0 };
       this.audio = {};
+      this.mic = 1;
       this.freq = JSON.parse(JSON.stringify(SEED));
 
       var scale = parseFloat(this.getAttribute('scale') || '1') || 1;
@@ -207,6 +224,14 @@
         audioState: function () { var o = {}; Object.keys(self.audio).forEach(function (k) { o[k] = self.audio[k]; }); return o; },
         setAudio: function (id, on) { var l = api.lever(id); if (l) { self.audio[id] = !!on; l.set(on ? 'right' : 'left'); } },
         onAudio: function (fn) { self._audioCb = fn; },
+        /* transmit selector: 1 = COM1, 2 = COM2 */
+        micSel: function () { return self.mic; },
+        setMic: function (n) {
+          self.mic = n === 2 ? 2 : 1;
+          var l = api.lever('mic-sel');
+          if (l) l.set(self.mic === 2 ? 'right' : 'left');
+        },
+        onMic: function (fn) { self._micCb = fn; },
         setBacklight: function (on) { self._backlight(!!on); },
         setColor: function (hex) { Object.keys(self.disp).forEach(function (k) { self.disp[k].setColor(hex); }); },
         root: this
@@ -259,6 +284,16 @@
 
     _wireLevers() {
       var self = this;
+      var mic = this.querySelector('[data-lever="mic-sel"]');
+      if (mic && mic.lever) {
+        this.mic = mic.lever.get() === 'right' ? 2 : 1;
+        mic.lever.onChange(function (pos) {
+          var next = pos === 'center' ? (self.mic === 1 ? 2 : 1) : (pos === 'right' ? 2 : 1);
+          self.mic = next;
+          mic.lever.set(next === 2 ? 'right' : 'left');
+          if (self._micCb) self._micCb(next);
+        });
+      }
       AUDIO.forEach(function (a) {
         var el = self.querySelector('[data-lever="' + a.id + '"]');
         if (!el || !el.lever) return;

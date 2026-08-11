@@ -10,21 +10,22 @@
 // EfisAdapter's adjustReadoutValue()/beginAdjust()/endAdjust() — the same
 // optimistic-write-with-drag-suppression pattern the FCU/EFIS baro knob
 // already uses. An earlier version of this file fired the discrete
-// stby_*_coarse/fine_up/down step commands instead, paced through
-// queuePress() to dodge X-Plane's command_set_is_active coalescing — that
-// turned out to be the wrong tool for a fast knob drag: even generously
-// paced, closely-spaced command activations still occasionally coalesced or
-// landed out of order (confirmed live), and a fast drag would queue far
-// more presses than could drain within the debounce window, so the display
-// kept visibly stepping for a while after the user's finger had already
-// left the knob. A direct dataref write has no hold-duration/coalescing
-// concept at all, so none of that pacing is needed.
+// stby_*_coarse/fine_up/down step commands instead, paced to dodge
+// X-Plane's command_set_is_active coalescing — that turned out to be the
+// wrong tool for a fast knob drag: even generously paced, a fast drag would
+// queue far more presses than could drain within the debounce window, so
+// the display kept visibly stepping for a while after the user's finger
+// had already left the knob. A direct write has no such pacing to do.
 //
 // The panel's own onFreq(u, band, pair) only hands back its own guessed new
 // value, not a raw turn direction — pair's *magnitude* isn't used for
-// anything (the real per-press step size, confirmed live, is applied here
-// instead — see STEP below); it's only compared against the adapter's own
-// current value to recover which way the knob turned.
+// anything, only its sign (compared against the adapter's own current
+// value) to recover which way the knob turned. nextStandbyRaw() below is
+// what actually computes the real next value, using each band's true
+// wraparound behaviour confirmed live 2026-08-11 (see its own comment) —
+// real 2-ring radios keep the fine (kHz) ring and coarse (MHz) ring
+// independent of each other, which the panel's own naive
+// current+direction*step arithmetic didn't respect.
 
 const LEVER_ID_TO_BAND = {
   "aud-com1": "COM1",
@@ -47,8 +48,8 @@ const DISPLAY_SCALE = { NAV1: 10, NAV2: 10, DME: 10 };
 const scaleFor = (band) => DISPLAY_SCALE[band] ?? 1;
 
 // Real per-press step sizes in each band's own *raw* dataref units (i.e.
-// before DISPLAY_SCALE) — see radio-panel-generic.json's _note_on_step_sizes
-// for how these were measured.
+// before DISPLAY_SCALE) — confirmed live 2026-08-11 by firing each step
+// command in isolation and reading the resulting dataref delta.
 const STEP = {
   COM1: { coarse: 1000, fine: 5 },
   COM2: { coarse: 1000, fine: 5 },
@@ -58,20 +59,103 @@ const STEP = {
   ADF: { coarse: 100, fine: 1 },
 };
 
-// Raw-unit standby range per band, so a fast drag past a band edge clamps
-// instead of writing a nonsensical out-of-range frequency.
+// Real standby range per band, in raw units — a final safety clamp so a
+// fast drag can never write a value the sim wouldn't accept. COM1/COM2's
+// max is 136990, *not* 136975 — the vendored component's own BANDS table
+// assumed 975, but walking the real fine_up_833 command through the 136
+// decade live (2026-08-11) showed it reaches 136980/136985/136990 exactly
+// like every other decade (see COM_FINE_INDEX_COUNT below); 975 was simply
+// wrong.
 const RAW_RANGE = {
-  COM1: { min: 118000, max: 136975 },
-  COM2: { min: 118000, max: 136975 },
+  COM1: { min: 118000, max: 136990 },
+  COM2: { min: 118000, max: 136990 },
   NAV1: { min: 10800, max: 11795 },
   NAV2: { min: 10800, max: 11795 },
   DME: { min: 10800, max: 11795 },
   ADF: { min: 190, max: 1750 },
 };
-const clampToRange = (value, band) => {
+const clamp = (value, band) => {
   const range = RAW_RANGE[band];
   return range ? Math.min(range.max, Math.max(range.min, value)) : value;
 };
+const mod = (n, m) => ((n % m) + m) % m;
+
+// Valid fine-offset span *within* one coarse digit, for bands with a plain
+// uniform fine grid (confirmed live 2026-08-11: NAV1 walked a full 0-95
+// decade with no gaps, wrapping cleanly at 95->00; ADF's ones_tens pair
+// likewise wraps cleanly at 99->00 without touching the hundreds digit).
+// COM1/COM2 are handled separately below — their real 8.33kHz grid isn't
+// uniform.
+const FINE_SPAN = { NAV1: 100, NAV2: 100, DME: 100, ADF: 100 };
+
+// COM's real 8.33kHz channel grid isn't a uniform every-5 sequence within
+// one MHz — confirmed live 2026-08-11 by walking the real fine_up_833
+// command through two full decades (119 and 136): valid offsets are
+// multiples of 5 in [0,990], *except* whichever one is ==20 (mod 25) —
+// e.g. ...,015,[020 skipped],025,030,035,040,[045 skipped],050,... This is
+// the real ICAO 8.33kHz-within-legacy-25kHz-block channel numbering.
+// Encoded as a 160-entry index (40 blocks of 4 members) so stepping is a
+// plain wrapping array walk instead of modular arithmetic that also has to
+// reproduce the skip.
+const COM_FINE_INDEX_COUNT = 160; // 40 blocks x 4 members
+function comOffsetToIndex(offset) {
+  const block = Math.floor(offset / 25);
+  const member = Math.min(3, Math.round((offset - block * 25) / 5));
+  return block * 4 + member;
+}
+function comIndexToOffset(index) {
+  const block = Math.floor(index / 4);
+  const member = index % 4;
+  return block * 25 + member * 5;
+}
+
+// Whether the coarse ring wraps around at the band's own edges (COM/NAV/
+// DME, confirmed live: 136.500 coarse-up -> 118.500 and 117.90 coarse-up
+// -> 108.90, keeping the kHz offset) or just clamps there (ADF: confirmed
+// live 1690 coarse-up -> 1750, not a wrap — its real 190-1750 range isn't
+// a clean multiple of its own 100-unit coarse step, so "keep the other
+// digits, wrap this one" doesn't apply the way it does for the others).
+const COARSE_WRAPS = new Set(["COM1", "COM2", "NAV1", "NAV2", "DME"]);
+
+/**
+ * The real next standby value for one knob turn, matching how the actual
+ * X-Plane commands behave (confirmed live 2026-08-11, see the comments on
+ * the tables above) rather than the vendored panel's own naive
+ * current+direction*step arithmetic — which carried fine-tune overflow
+ * into the MHz/hundreds digit, and hard-stopped at the band edges instead
+ * of wrapping. Both were flagged as wrong by real end-user feedback ("not
+ * how most avionics behave").
+ */
+function nextStandbyRaw(band, current, mode, dir) {
+  const step = STEP[band];
+  if (!step) return current;
+  const coarseUnit = step.coarse;
+
+  if (mode === "fine") {
+    const coarseDigit = Math.floor(current / coarseUnit) * coarseUnit;
+    const offset = current - coarseDigit;
+    let nextOffset;
+    if (band === "COM1" || band === "COM2") {
+      const index = mod(comOffsetToIndex(offset) + dir, COM_FINE_INDEX_COUNT);
+      nextOffset = comIndexToOffset(index);
+    } else {
+      nextOffset = mod(offset + dir * step.fine, FINE_SPAN[band] ?? coarseUnit);
+    }
+    return clamp(coarseDigit + nextOffset, band);
+  }
+
+  // coarse
+  const offset = current - Math.floor(current / coarseUnit) * coarseUnit;
+  if (!COARSE_WRAPS.has(band)) return clamp(current + dir * coarseUnit, band);
+
+  const range = RAW_RANGE[band];
+  const minDigit = Math.floor(range.min / coarseUnit) * coarseUnit;
+  const maxDigit = Math.floor(range.max / coarseUnit) * coarseUnit;
+  const span = maxDigit - minDigit + coarseUnit;
+  const coarseDigit = Math.floor(current / coarseUnit) * coarseUnit;
+  const nextDigit = minDigit + mod(coarseDigit - minDigit + dir * coarseUnit, span);
+  return nextDigit + offset; // always within range by construction — offset <= coarseUnit-1 and nextDigit is a real MHz/hundreds digit
+}
 
 /** Blanks the radio panel with no adapter involved — see blankFcuPanel() for why (the vendored component's own baked-in SEED frequencies would otherwise read as live data before a connection exists). */
 export function blankRadioPanel() {
@@ -115,9 +199,24 @@ export function wireRadioPanel(adapter) {
 
     const scale = scaleFor(band);
     const currentRaw = Number(adapter.getReadoutValue(band, "standby")) || 0;
-    const dir = pair[1] >= currentRaw * scale ? 1 : -1;
     const mode = rp.tuneMode(u) === "coarse" ? "coarse" : "fine";
-    const nextRaw = clampToRange(currentRaw + dir * step[mode], band);
+
+    // The panel's own guessed pair[1] wraps using radio.js's own
+    // whole-band min/max (not our real per-decade wraparound — see
+    // nextStandbyRaw()'s own comment), so right at an edge it can land on
+    // the *opposite* side of the real current value — a plain sign
+    // comparison there would misread the turn as reversed (confirmed live
+    // 2026-08-12: 118.000 fine-down not wrapping, 136MHz fine-up not
+    // wrapping, coarse only wrapping in one direction — all the same root
+    // cause). Every band's own step constant now exactly matches our real
+    // measured one (see STEP above), so a genuine, non-wrapped turn's
+    // delta is always exactly +-(step*scale); any other magnitude means
+    // the panel's own wrap kicked in and the sign needs inverting.
+    const rawDelta = pair[1] - currentRaw * scale;
+    const expectedDelta = step[mode] * scale;
+    const dir = Math.abs(rawDelta) === expectedDelta ? Math.sign(rawDelta) : -Math.sign(rawDelta);
+
+    const nextRaw = nextStandbyRaw(band, currentRaw, mode, dir);
     const deltaRaw = nextRaw - currentRaw;
 
     if (!dragEndTimers.has(band)) adapter.beginAdjust(band);
@@ -147,11 +246,24 @@ export function wireRadioPanel(adapter) {
     if (adapter.isLit(band) !== on) adapter.press(band);
   });
 
+  // audio_com_selection isn't a clean 0/1 enum (confirmed live 2026-08-12:
+  // 6 for COM1, 7 for COM2 in this session — see radio-panel-generic.json's
+  // MIC_SEL._note) — only its parity means "which COM", so this reads it
+  // that way rather than as an exact-match toggle.
+  rp.onMic((n) => {
+    if (adapter.unresolved.has("MIC_SEL")) return;
+    adapter.press(n === 2 ? "MIC_SEL.selectCom2" : "MIC_SEL.selectCom1");
+  });
+
   const refresh = () => {
     syncUnit(1);
     syncUnit(2);
     for (const [id, band] of Object.entries(LEVER_ID_TO_BAND)) {
       if (adapter.isAvailable(band)) rp.setAudio(id, adapter.isLit(band));
+    }
+    if (!adapter.unresolved.has("MIC_SEL")) {
+      const raw = Math.round(Number(adapter.getReadoutValue("MIC_SEL", "value")) || 0);
+      rp.setMic(raw % 2 === 1 ? 2 : 1);
     }
   };
 

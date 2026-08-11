@@ -191,10 +191,6 @@ wiring up a new profile.
   a simple control. There's also no audio-select entry for XPDR — X-Plane
   has no `monitor_audio_xpdr`-shaped command, a real model gap rather than
   an oversight here.
-- NAV1/NAV2/DME can occasionally step non-monotonically when tuned inside
-  108.00–111.95MHz, the real-world band shared between VOR and ILS
-  localizer frequencies with odd/even channel interleaving — confirmed
-  live, not a wiring bug, and not something client-side code can predict.
 - The 737-800 MCDU has no wired brightness control — the real hardware
   has a rotary knob there, and nothing obviously matching it turned up in
   a live dataref/command scan (unlike the Airbus, which uses a plain
@@ -267,9 +263,23 @@ wiring up a new profile.
   stepping through commands — see `src/radio-panel.js`'s own top comment
   for why (X-Plane's command coalescing made discrete step commands feel
   laggy and imprecise on a fast drag; a direct write doesn't have that
-  problem).
+  problem). The fine and coarse rings are independent, matching real
+  2-ring radios: fine wraps the kHz offset within its own MHz without
+  ever touching the MHz digit, and coarse wraps the MHz digit around at
+  the band edges (136.500 → coarse up → 118.500) instead of hard-stopping
+  — both confirmed live against the real X-Plane commands, including
+  COM's non-uniform real 8.33kHz channel grid within each MHz (see
+  `nextStandbyRaw()`'s own comment for the exact pattern).
 - **Audio select row**: six two-position switches (COM1/COM2/NAV1/NAV2/
   ADF/DME) below both units, tap-to-flip.
+- **MIC SEL**: a two-position lever between the COM1/COM2 audio switches
+  picking which radio transmits (`sim/audio_panel/transmit_audio_com{1,2}`
+  — one-shot select commands, not toggles). Its state dataref
+  (`audio_com_selection`) isn't a clean 0/1 enum — confirmed live it read
+  6 for COM1 and 7 for COM2 in one session, with other bits already set by
+  the aircraft's own baseline state — so it's read by parity (odd = COM2)
+  rather than an exact-match toggle, which wouldn't tolerate that baseline
+  shifting.
 - **Generic aircraft option**: unlike EFIS/FCU/MCDU, this panel's dataref/
   command mapping lives under X-Plane's own generic radio-stack namespace
   (see "Adding support for another aircraft" below), so it's never

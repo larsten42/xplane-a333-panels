@@ -44,6 +44,7 @@ const INCLUDE = [
   "src/radio-panel.js",
   "src/readout-formats.js",
   "src/panel-autoscale.js",
+  "src/wake-lock.js",
   "src/console.js",
   "tools/mcdu-server.js",
 ];

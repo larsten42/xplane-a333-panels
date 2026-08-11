@@ -1,6 +1,6 @@
 {
   "name": "xplane-a333-panels",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Web/tablet MCDU, EFIS, FCU, and Radio panels for X-Plane 12's stock Airbus A330 (MCDU also supports the stock 737-800; Radio works with any default X-Plane aircraft), driven by X-Plane's built-in Web API.",
   "type": "module",
