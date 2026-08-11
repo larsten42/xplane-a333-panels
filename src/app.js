@@ -5,13 +5,16 @@ import { McduKeypad } from "./mcdu-keypad.js";
 import { EfisAdapter } from "./efis-adapter.js";
 import { wireEfisPanel, blankEfisPanel } from "./efis-panel.js";
 import { wireFcuPanel, blankFcuPanel } from "./fcu-panel.js";
+import { wireRadioPanel, blankRadioPanel } from "./radio-panel.js";
 import { setupAutoscale } from "./panel-autoscale.js";
 
-// <fcu-panel>/<efis-panel>'s native, unscaled pixel size — see their own
-// INTEGRATION.md's "Sizing" table. Needed here (not just discoverable from
-// the DOM) since panel-autoscale.js computes a scale factor against these.
+// <fcu-panel>/<efis-panel>/<radio-panel>'s native, unscaled pixel size —
+// see their own INTEGRATION.md's "Sizing" table. Needed here (not just
+// discoverable from the DOM) since panel-autoscale.js computes a scale
+// factor against these.
 const FCU_NATIVE_SIZE = { width: 1266, height: 442 };
 const EFIS_NATIVE_SIZE = { width: 720, height: 370 };
+const RADIO_NATIVE_SIZE = { width: 1112, height: 500 };
 
 const STORAGE_KEY = "mcdu.connection";
 const THEME_KEY = "mcdu.theme";
@@ -28,6 +31,13 @@ const AIRCRAFT_MCDU_PROFILES = {
   a333: "./config/profiles/default-fms.json",
   b738: "./config/profiles/b738-fms.json",
 };
+
+// Unlike EFIS/FCU, the radio panel lives under X-Plane's own generic
+// sim/radios / sim/audio_panel / sim/transponder namespaces (see
+// config/profiles/radio-panel-generic.json's description) — same reasoning
+// as the MCDU profile being aircraft-generic, so it's not gated by aircraft
+// selection at all.
+const RADIO_PROFILE_PATH = "./config/profiles/radio-panel-generic.json";
 
 const els = {
   aircraftSelect: document.getElementById("aircraft-select"),
@@ -49,6 +59,7 @@ const els = {
   panelMcdu: document.getElementById("panel-mcdu"),
   panelEfis: document.getElementById("panel-efis"),
   panelFcu: document.getElementById("panel-fcu"),
+  panelRadio: document.getElementById("panel-radio"),
 };
 
 // Reconnecting swaps in new adapters/keypad bound to a new client, and
@@ -74,11 +85,13 @@ restorePanel();
 // the 737) rather than checking against the <select>'s unloaded default.
 restoreAircraft();
 
-// Otherwise <fcu-panel>/<efis-panel> show the vendored components' own
-// baked-in demo values from page load until connect() actually wires them
-// up — indistinguishable from real live data at a glance.
+// Otherwise <fcu-panel>/<efis-panel>/<radio-panel> show the vendored
+// components' own baked-in demo values from page load until connect()
+// actually wires them up — indistinguishable from real live data at a
+// glance.
 blankFcuPanel();
 blankEfisPanel();
+blankRadioPanel();
 
 setupAutoscale(els.autoscaleToggle, [
   {
@@ -92,6 +105,12 @@ setupAutoscale(els.autoscaleToggle, [
     panelEl: els.panelEfis.querySelector("efis-panel"),
     nativeWidth: EFIS_NATIVE_SIZE.width,
     nativeHeight: EFIS_NATIVE_SIZE.height,
+  },
+  {
+    container: els.panelRadio.querySelector(".scalable-panel"),
+    panelEl: els.panelRadio.querySelector("radio-panel"),
+    nativeWidth: RADIO_NATIVE_SIZE.width,
+    nativeHeight: RADIO_NATIVE_SIZE.height,
   },
 ]);
 
@@ -166,8 +185,13 @@ function restorePanel() {
   showPanel(panel);
 }
 
-// EFIS/FCU have no profile for anything but the Airbus (see
-// AIRCRAFT_MCDU_PROFILES above) — greyed out rather than left clickable
+// EFIS/FCU have no profile for anything but the Airbus, and "generic" (see
+// AIRCRAFT_MCDU_PROFILES above) has no MCDU profile at all — it exists
+// purely so the radio panel can be tested against a non-Airbus/non-737
+// default aircraft (e.g. a GA type) without also trying to connect
+// Airbus-specific MCDU/EFIS/FCU profiles against it, which would just pile
+// up unresolved-command noise for panels that were never going to work on
+// that aircraft anyway. Options are greyed out rather than left clickable
 // into a panel that would just show unresolved/disabled everything.
 els.aircraftSelect.addEventListener("change", () => {
   localStorage.setItem(AIRCRAFT_KEY, els.aircraftSelect.value);
@@ -181,13 +205,17 @@ function restoreAircraft() {
 
 function applyAircraftAvailability() {
   const isAirbus = els.aircraftSelect.value === "a333";
+  const hasMcdu = Boolean(AIRCRAFT_MCDU_PROFILES[els.aircraftSelect.value]);
   for (const opt of els.panelSelect.options) {
     if (opt.value === "efis" || opt.value === "fcu") opt.disabled = !isAirbus;
+    if (opt.value === "mcdu") opt.disabled = !hasMcdu;
   }
-  if (!isAirbus && els.panelSelect.value !== "mcdu") {
-    els.panelSelect.value = "mcdu";
-    localStorage.setItem(PANEL_KEY, "mcdu");
-    showPanel("mcdu");
+  // The radio panel (never disabled) is always a safe fallback once the
+  // currently selected panel option becomes unavailable for this aircraft.
+  if (els.panelSelect.selectedOptions[0]?.disabled) {
+    els.panelSelect.value = "radio";
+    localStorage.setItem(PANEL_KEY, "radio");
+    showPanel("radio");
   }
 }
 
@@ -196,6 +224,7 @@ function showPanel(panel) {
   els.panelMcdu.hidden = panel !== "mcdu";
   els.panelEfis.hidden = panel !== "efis";
   els.panelFcu.hidden = panel !== "fcu";
+  els.panelRadio.hidden = panel !== "radio";
 
   // The physical-keyboard bindings only make sense while the MCDU panel is
   // the one actually on screen — otherwise typing while looking at EFIS
@@ -264,25 +293,36 @@ async function connect() {
   await client.connectSocket(els.panelSelect.value);
 
   const isAirbus = els.aircraftSelect.value === "a333";
-  const [mcduProfile, efisProfile, fcuProfile] = await Promise.all([
-    fetch(AIRCRAFT_MCDU_PROFILES[els.aircraftSelect.value]).then((r) => r.json()),
+  const mcduProfilePath = AIRCRAFT_MCDU_PROFILES[els.aircraftSelect.value];
+  const [mcduProfile, efisProfile, fcuProfile, radioProfile] = await Promise.all([
+    mcduProfilePath ? fetch(mcduProfilePath).then((r) => r.json()) : null,
     isAirbus ? fetch("./config/profiles/efis-a333.json").then((r) => r.json()) : null,
     isAirbus ? fetch("./config/profiles/fcu-a333.json").then((r) => r.json()) : null,
+    fetch(RADIO_PROFILE_PATH).then((r) => r.json()),
   ]);
 
-  const mcduAdapter = new McduAdapter(client, mcduProfile, cduIndex);
-  await mcduAdapter.connect();
+  // No MCDU profile for "generic" — see AIRCRAFT_MCDU_PROFILES above. The
+  // mcdu panel option is already disabled in that case
+  // (applyAircraftAvailability()), so mcduKeypad staying null just means
+  // there's nothing to attach keyboard input to.
+  let mcduAdapter = null;
+  if (mcduProfile) {
+    mcduAdapter = new McduAdapter(client, mcduProfile, cduIndex);
+    await mcduAdapter.connect();
 
-  new McduScreenView(els.screen, mcduAdapter);
+    new McduScreenView(els.screen, mcduAdapter);
 
-  mcduKeypad = new McduKeypad(mcduAdapter);
-  mcduKeypad.renderLskColumn("line_select_left", els.lskLeft);
-  mcduKeypad.renderLskColumn("line_select_right", els.lskRight);
-  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.functionBlock, els.blockFunction);
-  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.utilityBlock, els.blockUtility);
-  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.numericBlock, els.blockNumeric);
-  mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.alphaBlock, els.blockAlpha);
-  mcduKeypad.refreshAvailability();
+    mcduKeypad = new McduKeypad(mcduAdapter);
+    mcduKeypad.renderLskColumn("line_select_left", els.lskLeft);
+    mcduKeypad.renderLskColumn("line_select_right", els.lskRight);
+    mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.functionBlock, els.blockFunction);
+    mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.utilityBlock, els.blockUtility);
+    mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.numericBlock, els.blockNumeric);
+    mcduKeypad.renderLayoutGrid(mcduProfile.keypadLayout.alphaBlock, els.blockAlpha);
+    mcduKeypad.refreshAvailability();
+  } else {
+    mcduKeypad = null;
+  }
 
   // No EFIS/FCU profile for anything but the Airbus yet — see
   // AIRCRAFT_MCDU_PROFILES above. Those panel options are already disabled
@@ -301,16 +341,23 @@ async function connect() {
     wireFcuPanel(fcuAdapter);
   }
 
+  const radioAdapter = new EfisAdapter(client, radioProfile);
+  await radioAdapter.connect();
+  wireRadioPanel(radioAdapter);
+
   // Re-applies keyboard-input attachment for whichever panel is currently
   // selected, now that mcduKeypad actually exists.
   showPanel(els.panelSelect.value);
 
   const unresolvedCount =
-    mcduAdapter.unresolvedKeys.size + (efisAdapter?.unresolved.size ?? 0) + (fcuAdapter?.unresolved.size ?? 0);
+    (mcduAdapter?.unresolvedKeys.size ?? 0) +
+    (efisAdapter?.unresolved.size ?? 0) +
+    (fcuAdapter?.unresolved.size ?? 0) +
+    radioAdapter.unresolved.size;
   if (unresolvedCount > 0) {
     setStatus("open", `connected, but ${unresolvedCount} item(s) didn't resolve — see console`);
   } else {
-    setStatus("open", `connected to CDU ${cduIndex}`);
+    setStatus("open", mcduAdapter ? `connected to CDU ${cduIndex}` : "connected");
   }
 
   els.connectBtn.disabled = false;

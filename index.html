@@ -12,6 +12,9 @@
        elements — used by both panels below, so it's loaded once, here,
        rather than duplicated near each usage site. See vendor/README.md. -->
   <script src="./vendor/fcu-instruments.js"></script>
+  <!-- Defines <radio-panel>, built from the primitives above — must load
+       after fcu-instruments.js. See vendor/README.md. -->
+  <script src="./vendor/radio.js"></script>
 </head>
 <body>
   <header class="connection-bar">
@@ -19,6 +22,7 @@
       <select id="aircraft-select">
         <option value="a333">Airbus A330</option>
         <option value="b738">Boeing 737-800</option>
+        <option value="generic">Generic</option>
       </select>
     </label>
     <label>Panel
@@ -26,6 +30,7 @@
         <option value="mcdu">MCDU</option>
         <option value="efis">EFIS</option>
         <option value="fcu">FCU</option>
+        <option value="radio">Radio</option>
       </select>
     </label>
     <label class="mcdu-only-control">CDU
@@ -90,6 +95,15 @@
   <div id="panel-fcu" class="panel-content" hidden>
     <div class="scalable-panel">
       <fcu-panel></fcu-panel>
+    </div>
+  </div>
+
+  <!-- Generic radio stack — unlike EFIS/FCU, this one has a profile for
+       every aircraft (see AIRCRAFT_MCDU_PROFILES's neighboring comment in
+       app.js), so it's never disabled in the panel selector. -->
+  <div id="panel-radio" class="panel-content" hidden>
+    <div class="scalable-panel">
+      <radio-panel></radio-panel>
     </div>
   </div>
 

@@ -1,0 +1,145 @@
+{
+  "id": "xplane12-generic-radio-panel",
+  "aircraft": "Generic X-Plane 12 default GA radio stack",
+  "label": "X-Plane 12 default COM/NAV/ADF/DME/XPDR radio stack",
+  "description": "Dataref/command mapping for a generic COM1/COM2/NAV1/NAV2/ADF/DME/XPDR radio panel, confirmed live against a running X-Plane 12.4.3 with the stock Beechcraft King Air C90 (ICAO B9L) loaded (2026-08-11). Everything here lives under the plain sim/radios, sim/audio_panel, and sim/transponder namespaces (not laminar/c90/...), which is X-Plane's own generic radio-stack implementation shared across its default GA aircraft the same way the default FMS/CDU is (see b738-fms.json) — expected to generalize to other default aircraft with the standard radio stack, but re-verify before trusting unchanged; add-on aircraft with custom avionics won't have any of this. Verified live: com1's coarse/fine standby-tune commands step the standby frequency by the expected amount, its flip command cleanly swaps active<->standby, the ADF hundreds_thous/ones_tens commands (per explicit confirmation, not a guess) step the standby ADF frequency correctly, and the transponder_12/34_up/down commands step the expected digit pairs of the squawk code.",
+
+  "_note_on_xpdr_mode": "Deliberately not wired yet — transponder_mode is a live-confirmed 8-state enum (off=0, standby=1, on=2, alt=3, test=4, ground=5, ta_only=6, ta_ra=7), not the simple ON/OFF the panel brief calls for. Add once it's decided how that collapses.",
+  "_note_on_xpdr_audio": "No XPDR entry in the audio-toggle row — transponders don't have an audio channel to monitor in X-Plane's model (no sim/audio_panel/monitor_audio_xpdr-shaped command exists), unlike the other six radios.",
+  "_note_on_com_833": "COM1/COM2 use the _833 (8.33kHz-spacing) dataref variants, not the plain 25kHz ones — confirmed live these give 3 decimal digits of real precision (e.g. 118.505), matching the display's 6-digit/3-decimal format; the plain variants only carry 2. NAV/DME have no _833 variant (fixed 50kHz spacing) — the plain dataref's 2 real decimal digits are shown padded with a trailing 0 to fill the same 6-digit/3-decimal window, no precision lost since a 50kHz-spaced value is always exactly .x0 or .x5.",
+  "_note_on_standby_tuning": "The standby frequency actuators are directly writable (confirmed live 2026-08-11: setting com1_standby_frequency_hz_833/nav1_standby_frequency_hz/dme_standby_frequency_hz/adf1_standby_frequency_hz all took immediately, no override-back from the sim), so standby tuning uses each readout's own `encoder` (writeDataref pointing at the same standby dataref, valueKey \"standby\") via EfisAdapter.adjustReadoutValue()/beginAdjust()/endAdjust() — the same pattern the FCU/EFIS baro knob already uses. An earlier version instead fired the discrete stby_*_coarse/fine_up/down step commands (still present under XPDR below, which has no writable dataref), paced to dodge X-Plane's command_set_is_active coalescing (activations spaced closer than its ~150ms hold duration collapse into one) — that turned out to be the wrong tool for a fast knob drag: even generously paced, a burst of rapid presses reliably lost steps (confirmed live: 10 rapid stby_com1_fine_up_833 presses sometimes landed as few as 4-5 real steps, one burst even produced a net *negative* delta), and a fast drag would queue far more presses than could drain before the display needed to settle. A direct write has no hold-duration/coalescing concept at all, so src/radio-panel.js computes the real per-press step size itself (see _note_on_step_sizes) and writes the new standby value directly — no queue, no pacing.",
+  "_note_on_step_sizes": "Real per-press step sizes, confirmed live 2026-08-11 by firing each step command once in isolation and reading the resulting dataref delta: COM1/COM2 coarse=1000 (1MHz) fine=5 (0.005MHz, i.e. true 8.33kHz-ish spacing — NOT the naive 25 (0.025MHz/25kHz) a 25kHz-spacing assumption would give). NAV1/NAV2/DME coarse=100 (1MHz, remember these datarefs carry only 2 decimal digits) fine=5 (0.05MHz/50kHz). ADF coarse=100 (100kHz, the hundreds_thous digit pair) fine=1 (1kHz, the ones_tens digit pair). NAV/DME can occasionally step non-monotonically inside 108.00-111.95MHz, the real-world band shared between VOR and ILS localizer frequencies with odd/even channel interleaving — a genuine X-Plane/real-world quirk, not a wiring bug, and not worth trying to predict client-side. src/radio-panel.js's own STEP/RAW_RANGE constants are the source of truth for these now, not this note.",
+
+  "readouts": [
+    {
+      "name": "COM1",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/com1_frequency_hz_833",
+        "standby": "sim/cockpit2/radios/actuators/com1_standby_frequency_hz_833"
+      },
+      "commands": { "swap": "sim/radios/com1_standy_flip" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/com1_standby_frequency_hz_833",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "COM2",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/com2_frequency_hz_833",
+        "standby": "sim/cockpit2/radios/actuators/com2_standby_frequency_hz_833"
+      },
+      "commands": { "swap": "sim/radios/com2_standy_flip" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/com2_standby_frequency_hz_833",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "NAV1",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/nav1_frequency_hz",
+        "standby": "sim/cockpit2/radios/actuators/nav1_standby_frequency_hz"
+      },
+      "commands": { "swap": "sim/radios/nav1_standy_flip" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/nav1_standby_frequency_hz",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "NAV2",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/nav2_frequency_hz",
+        "standby": "sim/cockpit2/radios/actuators/nav2_standby_frequency_hz"
+      },
+      "commands": { "swap": "sim/radios/nav2_standy_flip" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/nav2_standby_frequency_hz",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "ADF",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/adf1_frequency_hz",
+        "standby": "sim/cockpit2/radios/actuators/adf1_standby_frequency_hz"
+      },
+      "commands": { "swap": "sim/radios/adf1_standy_flip" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/adf1_standby_frequency_hz",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "DME",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/dme_frequency_hz",
+        "standby": "sim/cockpit2/radios/actuators/dme_standby_frequency_hz"
+      },
+      "commands": { "swap": "sim/radios/dme_standby_flip" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/dme_standby_frequency_hz",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "XPDR",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/transponder_code"
+      },
+      "commands": {
+        "coarseUp": "sim/transponder/transponder_12_up",
+        "coarseDown": "sim/transponder/transponder_12_down",
+        "fineUp": "sim/transponder/transponder_34_up",
+        "fineDown": "sim/transponder/transponder_34_down"
+      }
+    }
+  ],
+
+  "buttons": [
+    {
+      "name": "COM1",
+      "command": "sim/audio_panel/monitor_audio_com1",
+      "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_com1"
+    },
+    {
+      "name": "COM2",
+      "command": "sim/audio_panel/monitor_audio_com2",
+      "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_com2"
+    },
+    {
+      "name": "NAV1",
+      "command": "sim/audio_panel/monitor_audio_nav1",
+      "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_nav1"
+    },
+    {
+      "name": "NAV2",
+      "command": "sim/audio_panel/monitor_audio_nav2",
+      "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_nav2"
+    },
+    {
+      "name": "ADF",
+      "command": "sim/audio_panel/monitor_audio_adf1",
+      "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_adf1"
+    },
+    {
+      "name": "DME",
+      "command": "sim/audio_panel/monitor_audio_dme",
+      "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_dme1"
+    }
+  ]
+}

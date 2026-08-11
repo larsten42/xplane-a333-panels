@@ -24,25 +24,27 @@ ever talks to whatever host and port served it the page — it never needs
 X-Plane's address directly, which is what lets a tablet connect without any
 setup beyond opening a URL.
 
-All three panels share this one connection and one `XPlaneClient` instance
+All four panels share this one connection and one `XPlaneClient` instance
 (`src/xplane-client.js`); each panel just has its own adapter translating
 between the page's DOM and X-Plane's datarefs/commands. `mcdu-adapter.js`
 decodes the CDU's character-grid datarefs into a screen model. `efis-adapter.js`
 maps named buttons/readouts/toggle switches from a profile onto plain scalar
 datarefs and commands — genuinely EFIS-agnostic under the hood, so the same
-class is reused as-is for the FCU's profile too. Neither `mcdu-adapter.js`
-nor any `efis-adapter.js` instance knows the others exist.
+class is reused as-is for the FCU's and Radio's profiles too. Neither
+`mcdu-adapter.js` nor any `efis-adapter.js` instance knows the others exist.
 
-EFIS and FCU both render through `vendor/fcu-instruments.js` — a
+EFIS, FCU, and Radio all render through `vendor/fcu-instruments.js` — a
 third-party, dependency-free Web Components library (native custom
-elements, no build step) that defines `<efis-panel>` and `<fcu-panel>` and
-their constituent knobs/buttons/levers/displays. `src/efis-panel.js` and
-`src/fcu-panel.js` are the glue: they hold all the X-Plane-specific
-knowledge and wire a profile-driven `EfisAdapter` to that library's
-imperative JS API (`window.efis`/`window.fcuPanel`/`window.fcu`). The
-vendored file itself is never edited — see `vendor/README.md` for how to
-bring in an updated bundle. MCDU still renders through its own
-hand-written DOM (`mcdu-screen.js`/`mcdu-keypad.js`), not this library.
+elements, no build step) that defines `<efis-panel>`, `<fcu-panel>`, and
+their constituent knobs/buttons/levers/displays; `vendor/radio.js` builds
+`<radio-panel>` from those same primitives. `src/efis-panel.js`,
+`src/fcu-panel.js`, and `src/radio-panel.js` are the glue: they hold all
+the X-Plane-specific knowledge and wire a profile-driven `EfisAdapter` to
+that library's imperative JS API (`window.efis`/`window.fcuPanel`/
+`window.fcu`/`window.radioPanel`). The vendored files themselves are never
+edited — see `vendor/README.md` for how to bring in an updated bundle.
+MCDU still renders through its own hand-written DOM
+(`mcdu-screen.js`/`mcdu-keypad.js`), not this library.
 
 For the full X-Plane Web API protocol reference — endpoints, message
 formats, the CDU dataref layout, and some rough edges we ran into along the
@@ -76,7 +78,7 @@ output, so they match the page's look.
 
 ## Progressive Web App
 
-`manifest.webmanifest` + `icons/icon.svg` give the MCDU/EFIS/FCU page
+`manifest.webmanifest` + `icons/icon.svg` give the MCDU/EFIS/FCU/Radio page
 (`index.html`, not the operator console) a proper icon and name for
 Android's Chrome "Add to Home Screen" — confirmed on a real device:
 without HTTPS (see below), Chrome doesn't treat this as an installable
@@ -116,8 +118,9 @@ This starts a small stand-in server that mimics enough of the Web API to
 click through the MCDU, useful for confirming everything's wired up before
 pointing it at a real sim. You should see "MCDU MOCK SERVER" on line 1 and
 be able to type on the scratchpad line using the on-screen keypad. The mock
-server only covers the MCDU screen dataref today — EFIS and FCU both need a
-real X-Plane instance to test against (see "Known limitations" below).
+server only covers the MCDU screen dataref today — EFIS, FCU, and Radio all
+need a real X-Plane instance to test against (see "Known limitations"
+below).
 
 ## Building a distributable copy
 
@@ -174,20 +177,31 @@ wiring up a new profile.
   the profile); EFIS and FCU are Airbus-only — Boeing's real hardware is
   an MCP, not an FCU, with its own different EFIS control panel, so
   porting those is a new panel design, not a profile swap. Selecting the
-  737 greys out the EFIS/FCU panel options rather than leaving them
-  clickable into an all-unresolved panel. Add-on airliners (Zibo 737,
-  FlightFactor, ToLiss, ...) need their own profile too, for any panel —
-  they replace the default systems/avionics wholesale, entirely different
-  namespace (see below). Buttons/keys whose command doesn't resolve are
-  disabled rather than silently failing, so a missing/wrong profile entry
-  is obvious rather than confusing.
+  737 (or **Generic**) greys out the EFIS/FCU/MCDU panel options that
+  don't apply rather than leaving them clickable into an all-unresolved
+  panel. Add-on airliners (Zibo 737, FlightFactor, ToLiss, ...) need their
+  own profile too, for any panel — they replace the default systems/
+  avionics wholesale, entirely different namespace (see below). Buttons/
+  keys whose command doesn't resolve are disabled rather than silently
+  failing, so a missing/wrong profile entry is obvious rather than
+  confusing.
+- The Radio panel's transponder mode (OFF/STANDBY/ON/ALT/TEST/GROUND/
+  TA_ONLY/TA_RA — a live-confirmed 8-state enum) isn't wired yet; a
+  dedicated XPDR row is planned once it's decided how that collapses onto
+  a simple control. There's also no audio-select entry for XPDR — X-Plane
+  has no `monitor_audio_xpdr`-shaped command, a real model gap rather than
+  an oversight here.
+- NAV1/NAV2/DME can occasionally step non-monotonically when tuned inside
+  108.00–111.95MHz, the real-world band shared between VOR and ILS
+  localizer frequencies with odd/even channel interleaving — confirmed
+  live, not a wiring bug, and not something client-side code can predict.
 - The 737-800 MCDU has no wired brightness control — the real hardware
   has a rotary knob there, and nothing obviously matching it turned up in
   a live dataref/command scan (unlike the Airbus, which uses a plain
   press-up/down command pair). Left unwired rather than guessed.
 - `npm run mock`'s mock X-Plane server only implements the MCDU screen
-  dataref — EFIS's and FCU's buttons, readouts, and knobs/levers aren't
-  mocked yet, so testing either panel needs a real X-Plane instance.
+  dataref — EFIS's, FCU's, and Radio's buttons, readouts, and knobs/levers
+  aren't mocked yet, so testing any of them needs a real X-Plane instance.
 - Brightness and annunciator-light datarefs were found alongside the MCDU
   keypad mapping but aren't wired into the interface yet.
 - No automatic reconnect, no multi-tablet coordination beyond X-Plane's own
@@ -240,20 +254,45 @@ wiring up a new profile.
   dots and the HDG-TRK/V-S-FPA mode annunciator all driven from live
   datarefs. V/S shows dashes when no vertical target is active.
 
+### Radio
+
+- **Two independent units** (upper/lower), each a 6-position selector
+  (COM1/COM2/NAV1/NAV2/ADF/DME) with its own active/standby seven-segment
+  pair, tuning knob, and ACT/STBY swap button — matching two real radios
+  stacked in one panel, not one shared selector.
+- **Tuning knob**: grab distance from center picks coarse (MHz, outer
+  ring) vs fine (kHz, inner boss) per gesture, with a lit legend showing
+  which is active. Press-and-hold (~400ms) swaps, same as the dedicated
+  button. Writes the standby frequency dataref directly rather than
+  stepping through commands — see `src/radio-panel.js`'s own top comment
+  for why (X-Plane's command coalescing made discrete step commands feel
+  laggy and imprecise on a fast drag; a direct write doesn't have that
+  problem).
+- **Audio select row**: six two-position switches (COM1/COM2/NAV1/NAV2/
+  ADF/DME) below both units, tap-to-flip.
+- **Generic aircraft option**: unlike EFIS/FCU/MCDU, this panel's dataref/
+  command mapping lives under X-Plane's own generic radio-stack namespace
+  (see "Adding support for another aircraft" below), so it's never
+  disabled by the **Aircraft** selector — including the dedicated
+  **Generic** option, for using it without also connecting an Airbus/737
+  MCDU.
+
 ### Shared
 
 - **Aircraft selector**: switches which MCDU profile loads (Airbus A330 /
-  Boeing 737-800) — see "Adding support for another aircraft" below.
-  Selecting the 737 disables the EFIS/FCU panel options (see "Known
-  limitations"). Takes effect on the next Connect/Reconnect, not live.
-- **Panel selector**: switches the main content between MCDU, EFIS, and
-  FCU, top bar included, without dropping the connection.
+  Boeing 737-800), plus a **Generic** option with no MCDU/EFIS/FCU at all
+  — see "Adding support for another aircraft" below. Selecting the 737 or
+  Generic disables the panel options that don't apply (see "Known
+  limitations"); the currently-selected panel falls back to Radio if it
+  becomes disabled. Takes effect on the next Connect/Reconnect, not live.
+- **Panel selector**: switches the main content between MCDU, EFIS, FCU,
+  and Radio, top bar included, without dropping the connection.
 - **Full screen**: the button in the top-right hides the connection
   controls, for flying without clutter on screen.
-- **Auto-scale** (EFIS/FCU only): a "FIT" toggle in the top-right scales
-  the active panel to fill the available window space (recomputed on
-  resize); toggling it off shows the panel at its native pixel size.
-  Persists across reloads, one shared preference for both panels.
+- **Auto-scale** (EFIS/FCU/Radio only): a "FIT" toggle in the top-right
+  scales the active panel to fill the available window space (recomputed
+  on resize); toggling it off shows the panel at its native pixel size.
+  Persists across reloads, one shared preference across all three panels.
 
 ## Adding support for another aircraft
 
@@ -331,6 +370,19 @@ A330's too, you'd also need your own panel — either a new profile-driven
 consumer of the vendored library's lower-level pieces (`<fcu-knob>`,
 `<fcu-led-button>`, etc. — see `vendor/README.md`), or a fully custom one.
 
+**Radio** (`radio-panel-generic.json`) is the one panel that isn't
+per-aircraft — it lives under X-Plane's own generic `sim/radios`/
+`sim/audio_panel`/`sim/transponder` namespaces, the same "shared program
+across Laminar's own default aircraft" situation as MCDU's `sim/FMS`, so
+one profile is expected to work for any default aircraft with the
+standard radio stack (confirmed against the stock King Air C90 and the
+A330/737-800; re-verify before trusting it unchanged on another). It's
+still `EfisAdapter`-shaped, `readouts`/`buttons` same as EFIS/FCU, but
+tuning uses `readouts[].encoder` (a directly-writable standby-frequency
+dataref, `valueKey: "standby"`) rather than paced step commands — see
+`src/radio-panel.js`'s own top comment for why a direct write won over
+firing `stby_*_coarse/fine_up/down` commands for this particular knob.
+
 ## Fonts
 
 **B612 Mono** — the real font Airbus commissioned (with ENAC/Intactile
@@ -352,7 +404,7 @@ ever replaces the vendored library, both are worth re-evaluating.
 ## Project layout
 
 ```
-index.html                        the page — MCDU + EFIS + FCU markup, Panel selector
+index.html                        the page — MCDU + EFIS + FCU + Radio markup, Panel selector
 console.html                      operator console page — see "Operator console" above
 manifest.webmanifest              PWA manifest for index.html — see "Progressive Web App" above
 icons/icon.svg                    app icon, referenced by the manifest and both pages' favicons
@@ -360,7 +412,8 @@ css/mcdu.css                      MCDU look, plus the shared panel-switching/aut
 css/console.css                   operator console's own plain UI look, not linked to mcdu.css
 fonts/                            B612 Mono — see "Fonts" above
 vendor/
-  fcu-instruments.js                 third-party FCU+EFIS component library, used as-is — see vendor/README.md
+  fcu-instruments.js                 third-party FCU+EFIS+Radio component library, used as-is — see vendor/README.md
+  radio.js                           third-party <radio-panel> element, built on the above — see vendor/README.md
   qrcode-generator.js                third-party QR encoder, used as-is — see vendor/README.md
 src/
   xplane-client.js                 REST + WebSocket wrapper around X-Plane's Web API
@@ -369,17 +422,19 @@ src/
   mcdu-screen.js                      renders the screen model to DOM
   mcdu-keypad.js                       builds keypad buttons from a profile, wires presses
   efis-adapter.js                    named buttons/readouts/toggle switches -> datarefs/commands
-                                        (also reused as-is for the FCU profile — see its own top comment)
+                                        (also reused as-is for the FCU/Radio profiles — see its own top comment)
   efis-panel.js                       wires an EfisAdapter to vendor/fcu-instruments.js's <efis-panel>
   fcu-panel.js                         wires an EfisAdapter to vendor/fcu-instruments.js's <fcu-panel>
+  radio-panel.js                        wires an EfisAdapter to vendor/radio.js's <radio-panel>
   readout-formats.js                   per-readout display-text formatting (QNH, mode/range labels, FCU windows)
-  panel-autoscale.js                   fits <efis-panel>/<fcu-panel> to their container via a computed CSS transform
+  panel-autoscale.js                   fits <efis-panel>/<fcu-panel>/<radio-panel> to their container via a computed CSS transform
   console.js                           polls/renders the operator console — no X-Plane/adapter concepts at all
 config/profiles/
   default-fms.json                  MCDU dataref/command mapping for the stock A330's FMS
   b738-fms.json                     MCDU dataref/command mapping for the stock 737-800's FMS
   efis-a333.json                    EFIS dataref/command mapping for the stock EFIS (Airbus only)
   fcu-a333.json                     FCU dataref/command mapping for the stock FCU (Airbus only)
+  radio-panel-generic.json          Radio dataref/command mapping — aircraft-generic, not Airbus/737-specific
 docs/xplane-web-api-notes.md      protocol reference notes + sources
 tools/
   mcdu-server.js                     serves the app + proxies /api/* to X-Plane
@@ -400,8 +455,10 @@ tools/
   cause not yet identified.
 - The baro concentric ring's click target on the vendored EFIS knob is
   quite small — a Design polish item, not an instrumentation gap.
-- EFIS/FCU support in the mock server, so both panels can be
+- EFIS/FCU/Radio support in the mock server, so all three can be
   developed/tested without a running X-Plane instance too.
+- Transponder mode/on-off on the Radio panel, once it's decided how the
+  real 8-state mode enum collapses onto a simple control.
 - Profile picker in the UI instead of a hardcoded default, per panel.
 - A way to save a confirmed-working profile without hand-editing JSON.
 - Full offline-installable PWA (a service worker, not just the manifest —

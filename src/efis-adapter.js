@@ -60,10 +60,6 @@ export class EfisAdapter {
     this._onOffCommandIds = new Map();
     /** @type {Set<string>} same keys as above, present in the profile but unresolved on this sim */
     this.unresolved = new Set();
-    /** @type {Map<string, number>} name -> pending queued press count, for queuePress() */
-    this._pressQueue = new Map();
-    /** @type {Set<string>} names with an active queuePress() drain timer */
-    this._draining = new Set();
     /** @type {Set<string>} "readoutName.valueKey" currently under active local drag control — see beginAdjust()/endAdjust() */
     this._heldKeys = new Set();
     /** @type {Map<string, number>} readout name -> net steps still owed (positive = increments, negative = decrements) — see adjustReadoutIndex() */
@@ -290,32 +286,6 @@ export class EfisAdapter {
   }
 
   /**
-   * Like press(), but safe to call many times in quick succession (e.g.
-   * every step of a fast encoder drag). Firing command_set_is_active
-   * again before the previous activation's duration has elapsed makes
-   * X-Plane coalesce them into a single logical press instead of queuing
-   * them — confirmed empirically against the baro step commands — so
-   * this paces actual presses ~160ms apart and queues the rest rather
-   * than dropping them.
-   */
-  queuePress(name) {
-    this._pressQueue.set(name, (this._pressQueue.get(name) ?? 0) + 1);
-    if (this._draining.has(name)) return;
-    this._draining.add(name);
-    const drain = () => {
-      const pending = this._pressQueue.get(name) ?? 0;
-      if (pending <= 0) {
-        this._draining.delete(name);
-        return;
-      }
-      this._pressQueue.set(name, pending - 1);
-      this.press(name);
-      setTimeout(drain, 160);
-    };
-    drain();
-  }
-
-  /**
    * Marks a readout's encoder value as under active local control — call
    * on drag start, paired with endAdjust() on drag end. While held, this
    * readout's value-key subscription pushes are ignored (see
@@ -407,9 +377,8 @@ export class EfisAdapter {
    *
    * Queues into a single signed _pendingSteps counter per readout rather
    * than firing commands immediately or using two independent per-
-   * direction queues (which is what queuePress() would do if called
-   * separately for "increment" and "decrement") — a fast, slightly
-   * imprecise drag can generate a few steps in the "wrong" direction
+   * direction queues — a fast, slightly imprecise drag can generate a few
+   * steps in the "wrong" direction
    * along with the intended ones, and X-Plane coalesces overlapping
    * command_set_is_active activations, so an increment and a decrement
    * both in flight at once can silently cancel each other out. A single
@@ -435,7 +404,7 @@ export class EfisAdapter {
     return true;
   }
 
-  /** Single drain loop per readout, pacing ~160ms apart like queuePress(), but always resolving _pendingSteps' current sign so increment/decrement can never both be in flight at once. */
+  /** Single drain loop per readout, pacing ~160ms apart, always resolving _pendingSteps' current sign so increment/decrement can never both be in flight at once. */
   _drainSteps(name) {
     if (this._steppingDraining.has(name)) return;
     this._steppingDraining.add(name);

@@ -1,8 +1,9 @@
 # X-Plane A330 Panels
 
 Web-based cockpit panels for X-Plane 12's stock aircraft — a full **MCDU**,
-**EFIS**, and **FCU** set for the Airbus A330, plus **MCDU**-only support
-for the Boeing 737-800 — all in one page, switched with a **Panel**
+**EFIS**, and **FCU** set for the Airbus A330, **MCDU**-only support for the
+Boeing 737-800, and a **Radio** stack (COM/NAV/ADF/DME) that works with any
+of X-Plane's default aircraft — all in one page, switched with a **Panel**
 selector (and an **Aircraft** selector for which airframe's MCDU to use).
 Runs in any browser, no X-Plane plugin to install.
 
@@ -39,10 +40,16 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
   different enough (an MCP instead of an FCU, a different EFIS control
   panel) that supporting the 737 here means a new panel design, not a
   config change — not done, and not close.
-- **FCU** is the newest of the three panels: every button, knob, and
+- **FCU** is the newest of the three Airbus panels: every button, knob, and
   display is wired to a real command/dataref and usable, but it's had
   less real-flight mileage than MCDU/EFIS, and a couple of annunciators
   (LVLCH) have no confirmed driving dataref yet.
+- **Radio** — COM1/COM2/NAV1/NAV2/ADF/DME tuning and audio-select, plus a
+  shared **Generic** aircraft option in the selector for using it without
+  also connecting an Airbus/737 MCDU. Unlike the other panels, this one
+  lives under X-Plane's own generic radio-stack namespace, not an
+  aircraft-specific one, so it works with any default X-Plane aircraft that
+  has the standard radio stack. Transponder mode isn't wired yet.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full known-limitations
 list and the roadmap.
@@ -95,8 +102,8 @@ it shows — `http://localhost:5173` on the X-Plane machine, or
 `http://<that machine's LAN IP>:5173` from a tablet — and press
 **Connect**. There's no host or port to configure; the page always talks
 back to whatever server it loaded from. Use the **Panel** selector in the
-top bar to switch between MCDU, EFIS, and FCU — all three share the one
-connection, so there's no need to reconnect when switching.
+top bar to switch between MCDU, EFIS, FCU, and Radio — all four share the
+one connection, so there's no need to reconnect when switching.
 
 ## Extras
 

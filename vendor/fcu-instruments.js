@@ -130,10 +130,15 @@
       if (this._built) return;
       this._built = true;
       this.dataset.chassis = '1';
+      var dark = this.getAttribute('tone') === 'dark';
       base(this, 'position:absolute;left:0;top:0;width:100%;height:100%;border-radius:12px;' +
-        'background:linear-gradient(163deg,#5b7d8e 0%,#3f6274 18%,#2e4f61 52%,#26424f 78%,#1b3240 100%);' +
-        'box-shadow:inset 0 2px 0 rgba(190,225,240,.35), inset 0 -3px 0 rgba(0,0,0,.55),' +
-        ' inset 3px 0 0 rgba(150,190,205,.12), inset -3px 0 0 rgba(0,0,0,.3), 0 22px 50px rgba(0,0,0,.65);' +
+        (dark
+          ? 'background:linear-gradient(163deg,#3b4044 0%,#2b3033 18%,#1d2123 52%,#15181a 78%,#0c0e10 100%);' +
+            'box-shadow:inset 0 2px 0 rgba(200,210,215,.22), inset 0 -3px 0 rgba(0,0,0,.6),' +
+            ' inset 3px 0 0 rgba(160,170,175,.10), inset -3px 0 0 rgba(0,0,0,.35), 0 22px 50px rgba(0,0,0,.7);'
+          : 'background:linear-gradient(163deg,#5b7d8e 0%,#3f6274 18%,#2e4f61 52%,#26424f 78%,#1b3240 100%);' +
+            'box-shadow:inset 0 2px 0 rgba(190,225,240,.35), inset 0 -3px 0 rgba(0,0,0,.55),' +
+            ' inset 3px 0 0 rgba(150,190,205,.12), inset -3px 0 0 rgba(0,0,0,.3), 0 22px 50px rgba(0,0,0,.65);') +
         'pointer-events:none');
       var screws = flag(this, 'screws', true)
         ? '<i data-screw="tl" style="position:absolute;left:15px;top:15px;' + SCREW + '"></i>' +
@@ -145,6 +150,11 @@
         '<div style="position:absolute;inset:8px;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(10,25,35,.45), inset 0 1px 0 rgba(180,215,230,.18)"></div>' +
         '<div style="position:absolute;inset:0;border-radius:12px;background:radial-gradient(120% 90% at 50% -10%, rgba(255,255,255,.10) 0%, rgba(255,255,255,0) 55%)"></div>' +
         screws;
+      if (dark) {
+        this.querySelectorAll('[data-screw]').forEach(function (el) {
+          el.style.background = 'radial-gradient(circle at 35% 30%,#8a8f93,#22262a 70%)';
+        });
+      }
     }
   }
 
@@ -161,6 +171,10 @@
 
       base(this, 'position:relative;display:inline-flex;flex-direction:column;align-items:center;' +
         'border-radius:5px;font-family:Helvetica,Arial,sans-serif;' + WINDOW_BG);
+      if (this.getAttribute('bezel-tone') === 'black') {
+        this.style.background = 'linear-gradient(180deg,#16181a 0%,#0b0c0e 55%,#060708 100%)';
+        this.style.boxShadow = 'inset 0 0 0 1px #34383c, inset 0 2px 14px rgba(0,0,0,.85), 0 6px 20px rgba(0,0,0,.6)';
+      }
 
       var digits = '';
       for (var i = 0; i < n; i++) digits += digit('d' + i);
@@ -456,6 +470,8 @@
       var glowInset = 9;
       var bezelInset = bare ? glowInset : 17;
       var capInset = hasBezel ? bezelInset + 8 : (bare ? glowInset : 26);
+      if (this.hasAttribute('cap-inset')) capInset = num(this, 'cap-inset', capInset);
+      var knurl = flag(this, 'knurl', true);
 
       base(this, 'position:relative;width:' + size + 'px;height:' + size + 'px;border-radius:50%;' +
         'background:transparent;cursor:ns-resize;touch-action:none;display:block');
@@ -529,6 +545,13 @@
         cap.style.boxShadow = 'inset 0 2px 3px rgba(255,255,255,.7), inset 0 -3px 6px rgba(0,0,0,.35)';
       }
       bezel.style.display = (bare && !hasBezel) ? 'none' : '';
+      if (!knurl) bezel.style.background = 'radial-gradient(circle at 38% 26%,#9aa2a7 0%,#7c858b 48%,#525b61 100%)';
+      if (flag(this, 'bezel-mark', false)) {
+        bezel.insertAdjacentHTML('beforeend',
+          '<i data-bezel-mark style="position:absolute;left:50%;top:' + (2 * k) + 'px;width:' + (5 * k) +
+          'px;height:' + (12 * k) + 'px;margin-left:' + (-2.5 * k) + 'px;border-radius:2px;' +
+          'background:linear-gradient(180deg,#f7f9fa,#cbd2d5);box-shadow:0 1px 2px rgba(0,0,0,.6)"></i>');
+      }
       cap.style.background = petal
         ? 'radial-gradient(circle at 36% 26%,#8e979d 0%,#6d767c 45%,#464f55 100%)'
         : 'radial-gradient(circle at 36% 26%,#c3cace 0%,#98a1a7 45%,#616a70 100%)';
@@ -557,6 +580,9 @@
           this.querySelector('[data-tri]').style.display = boss === 'petal' ? '' : 'none';
         } else {
           this.querySelector('[data-boss-ring]').style.left = '12%';
+          if (!knurl) {
+            bossEl.style.background = 'radial-gradient(circle at 36% 26%,#c3cace 0%,#a2abb0 45%,#79828a 100%)';
+          }
         }
       }
 
@@ -581,6 +607,10 @@
         onPull: function (fn) { self._pullCb = fn; },
         push: function () { if (self._pushCb) self._pushCb(); },
         pull: function () { if (self._pullCb) self._pullCb(); },
+        // free-spinning outer ring (concentric coarse/fine tuning)
+        setBezelAngle: function (deg) { self.bezelAngle = deg; bezel.style.transform = 'rotate(' + deg + 'deg)'; },
+        turnBezel: function (d) { api.setBezelAngle((self.bezelAngle || 0) + d); },
+        getBezelAngle: function () { return self.bezelAngle || 0; },
         setBezel: function (i) { self._setBezel(i, false); },
         getBezel: function () { return self.bezelIndex; },
         toggleBezel: function () {
@@ -1017,8 +1047,11 @@
 
       var pick = function (e) {
         var r = self.getBoundingClientRect();
-        var x = (e.clientX - r.left) / r.width;
-        var pos = x < 0.38 ? 'left' : x > 0.62 ? 'right' : 'center';
+        // vertical levers read the Y axis: up = 'right' (ON), down = 'left' (OFF)
+        var t = flag(self, 'vertical', false)
+          ? 1 - (e.clientY - r.top) / r.height
+          : (e.clientX - r.left) / r.width;
+        var pos = t < 0.38 ? 'left' : t > 0.62 ? 'right' : 'center';
         if (pos === self.pos) return;
         self._set(pos);
         if (self._cb) self._cb(self.pos);
@@ -1044,10 +1077,22 @@
     _set(pos) {
       this.pos = LEVER_POS[pos] === undefined ? 'center' : pos;
       var dir = LEVER_POS[this.pos], t = this.throwPx * dir;
-      this._ball.style.transform = 'translateX(' + t + 'px)';
-      this._shaft.style.width = Math.abs(t) + 'px';
-      this._shaft.style.left = dir < 0 ? 'auto' : '50%';
-      this._shaft.style.right = dir < 0 ? '50%' : 'auto';
+      var hh = Math.round(9 * (num(this, 'size', 52) / 52));
+      if (flag(this, 'vertical', false)) {
+        this._ball.style.transform = 'translateY(' + (-t) + 'px)';
+        this._shaft.style.left = '50%';
+        this._shaft.style.right = 'auto';
+        this._shaft.style.width = hh + 'px';
+        this._shaft.style.marginLeft = (-hh / 2) + 'px';
+        this._shaft.style.top = '50%';
+        this._shaft.style.height = Math.abs(t) + 'px';
+        this._shaft.style.marginTop = dir > 0 ? (-Math.abs(t)) + 'px' : '0px';
+      } else {
+        this._ball.style.transform = 'translateX(' + t + 'px)';
+        this._shaft.style.width = Math.abs(t) + 'px';
+        this._shaft.style.left = dir < 0 ? 'auto' : '50%';
+        this._shaft.style.right = dir < 0 ? '50%' : 'auto';
+      }
     }
   }
 

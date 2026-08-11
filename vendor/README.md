@@ -31,6 +31,29 @@ adapters.
 That's the whole process — no build step, no merge, nothing else in the
 app should need to change unless the component API itself changed.
 
+## radio.js
+
+The generic radio-stack panel component ("Claude Design"'s vanilla build,
+same origin as fcu-instruments.js — native Web Components, zero
+dependencies, no build step; see staging/radio-stack/RADIO-INTEGRATION.md
+for the delivery this came from). Defines `<radio-panel>`, built from
+fcu-instruments.js's existing primitives plus a handful of new optional
+attributes added there for this panel (`panel-chassis[tone]`,
+`seven-seg[bezel-tone]`, `fcu-lever[vertical]`, `fcu-knob[knurl]`,
+`fcu-knob[bezel-mark]`, `fcu-knob[cap-inset]`, and the knob's
+`setBezelAngle`/`turnBezel`/`getBezelAngle` methods for the concentric
+coarse/fine tuning ring) — all additive and defaulted off, so they don't
+affect the existing `<fcu-panel>`/`<efis-panel>` look. Exposes
+`window.radioPanel`, which `src/radio-panel.js` wires to the real X-Plane
+adapter. Loaded after fcu-instruments.js (it depends on those primitives
+being defined first).
+
+**To update when a new bundle arrives:** same process as fcu-instruments.js
+above — copy both `fcu-instruments.js` and `radio.js` from the new bundle
+over these two files, reload and sanity-check all three panels (the shared
+library file affects FCU/EFIS too), and check `src/radio-panel.js` against
+the new bundle's own integration doc if any method names/signatures moved.
+
 ## qrcode-generator.js
 
 [Kazuhiko Arase's `qrcode-generator`](https://github.com/kazuhikoarase/qrcode-generator)
