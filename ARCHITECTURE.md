@@ -48,7 +48,8 @@ MCDU still renders through its own hand-written DOM
 
 For the full X-Plane Web API protocol reference — endpoints, message
 formats, the CDU dataref layout, and some rough edges we ran into along the
-way — see `docs/xplane-web-api-notes.md`.
+way — see `docs/xplane-web-api-notes.md`. For every dataref/command each
+panel actually uses, see `docs/dataref-inventory.md`.
 
 ## Operator console
 
@@ -336,7 +337,17 @@ with their own custom implementation under an entirely different
 namespace (`laminar/B738/...`-style paths won't even exist the same way),
 so none of the above shortcuts apply; expect to discover everything from
 scratch with `tools/discover.mjs` the way the original A330 profiles were
-built.
+built. `config/profiles/efis-toliss-airbus.json` is a first pass at this
+for ToLiss's Airbus EFIS — unlike every other profile in this repo, it was
+built by name-matching against a public dataref/command list rather than
+a live session (none was available), so its own `_note`/`_gap_*` fields
+flag exactly what's confirmed vs. deduced vs. genuinely missing (the LS
+button, BRG1/BRG2 selector, and baro unit-ring toggle had no plausible
+match at all). Wire into `AIRCRAFT_EFIS_PROFILES` in `app.js` the same way
+as `efis-a333.json`; verify every row with `tools/discover.mjs` before
+trusting it. Note this only covers EFIS — MCDU's *screen* (not its keys)
+and the Radio panel both assume a data/interaction shape ToLiss doesn't
+share, so porting those needs real code changes, not just a profile.
 
 **MCDU** (`default-fms.json`-shaped) has four parts:
 
@@ -370,7 +381,14 @@ level parts, all keyed by a display name:
   `readout-formats.js`), optionally paired with an `encoder` (a rotary
   knob: either a directly writable dataref, or a paced sequence of
   increment/decrement commands for detent selectors) and/or `commands`
-  (named push/pull commands, resolved as `"<readoutName>.<key>"`).
+  (named push/pull commands, resolved as `"<readoutName>.<key>"`). A baro-
+  style encoder's ring/arc unit toggle can be either a command pair
+  (`unitArc.startCommand`/`endCommand`, pressed via `commands`) or a
+  directly writable dataref (`unitArc.writeDataref`, written via
+  `EfisAdapter.setReadoutUnit()`) — `efis-panel.js`'s `wireBaroKnob()`
+  picks whichever the profile actually has, added for
+  `efis-toliss-airbus.json`'s `AirbusFBW/BaroUnitCapt` (confirmed writable,
+  unlike the stock A330's command-pair baro ring).
 
 For an EFIS/FCU of a genuinely different aircraft (own button/knob/lever
 set, not just an Airbus-family variant): duplicate the relevant profile,
@@ -443,9 +461,11 @@ config/profiles/
   default-fms.json                  MCDU dataref/command mapping for the stock A330's FMS
   b738-fms.json                     MCDU dataref/command mapping for the stock 737-800's FMS
   efis-a333.json                    EFIS dataref/command mapping for the stock EFIS (Airbus only)
+  efis-toliss-airbus.json           EFIS mapping for the ToLiss Airbus add-on — deduced, not live-verified, see its own _note/_gap_* fields
   fcu-a333.json                     FCU dataref/command mapping for the stock FCU (Airbus only)
   radio-panel-generic.json          Radio dataref/command mapping — aircraft-generic, not Airbus/737-specific
 docs/xplane-web-api-notes.md      protocol reference notes + sources
+docs/dataref-inventory.md         every dataref/command each panel actually uses, derived from config/profiles/
 tools/
   mcdu-server.js                     serves the app + proxies /api/* to X-Plane
   build-release.mjs                  assembles the zero-dependency dist/ zip

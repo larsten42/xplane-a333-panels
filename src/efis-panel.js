@@ -101,7 +101,11 @@ function refreshButtonLeds(efis, adapter, powered) {
 // resolution, reused as-is via adjustReadoutValue(). Push/pull engage STD
 // / revert to the selected QNH; the concentric ring picks the displayed
 // unit, mapped to the same setInHg/setHpa commands the old ArcToggle-based
-// UI used.
+// UI used on the stock A330 — some aircraft (confirmed: ToLiss Airbus's
+// AirbusFBW/BaroUnitCapt) expose that as a plain writable dataref instead
+// of a command pair, hence the isAvailable() branch below: prefer the
+// commands when the profile has them, fall back to a direct write via
+// setReadoutUnit() (encoder.unitArc.writeDataref) otherwise.
 function wireBaroKnob(efis, adapter) {
   const knob = efis.knob("baro");
   const dragEndTimers = new Map();
@@ -119,7 +123,11 @@ function wireBaroKnob(efis, adapter) {
   });
   knob.onPull(() => adapter.press("BARO.std"));
   knob.onPush(() => adapter.press("BARO.qnh"));
-  knob.onRing((i) => adapter.press(i === 0 ? "BARO.setInHg" : "BARO.setHpa"));
+  const unitByCommand = adapter.isAvailable("BARO.setInHg") || adapter.isAvailable("BARO.setHpa");
+  knob.onRing((i) => {
+    if (unitByCommand) adapter.press(i === 0 ? "BARO.setInHg" : "BARO.setHpa");
+    else adapter.setReadoutUnit("BARO", i);
+  });
 }
 
 function refreshQnh(efis, adapter, powered) {

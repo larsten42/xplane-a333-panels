@@ -1,0 +1,134 @@
+{
+  "aircraft": "ToLiss Airbus (AirbusFBW namespace)",
+  "side": "captain",
+  "_note_provenance": "NOT live-verified — deduced entirely from name-matching against https://github.com/dualznz/toliss-a430-datarefs (datarefs.txt/commands.txt), fetched 2026-08-12. Every entry below should be confirmed with tools/discover.mjs against a real running ToLiss Airbus before trusting it. See _gap_* notes for the pieces that had no plausible match at all in that static list and were left unwired rather than guessed.",
+  "_note_screen_and_radio_dont_transfer": "This profile is EFIS only. MCDU's screen (not just its keys) and the Radio panel both assume a data shape ToLiss doesn't share — see docs/dataref-inventory.md's sibling research notes (ask if you want those written up too) — porting those needs real code changes, not just a new profile.",
+
+  "buttons": [
+    {
+      "name": "CSTR",
+      "command": "toliss_airbus/dispcommands/CaptCstrPushButton",
+      "stateDataref": "AirbusFBW/NDShowCSTRCapt",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "WPT",
+      "_note": "command not confirmed — ToLiss's own list has no override, so this assumes it reuses the generic X-Plane command our own A330 profile already uses (not laminar/A333-specific to begin with).",
+      "command": "sim/instruments/EFIS_fix",
+      "stateDataref": "AirbusFBW/NDShowWPTCapt",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "VOR.D",
+      "_note": "command not confirmed — same reasoning as WPT above.",
+      "command": "sim/instruments/EFIS_vor",
+      "stateDataref": "AirbusFBW/NDShowVORDCapt",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "NDB",
+      "_note": "command not confirmed — same reasoning as WPT above.",
+      "command": "sim/instruments/EFIS_ndb",
+      "stateDataref": "AirbusFBW/NDShowNDBCapt",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "ARPT",
+      "_note": "command not confirmed — same reasoning as WPT above.",
+      "command": "sim/instruments/EFIS_apt",
+      "stateDataref": "AirbusFBW/NDShowARPTCapt",
+      "style": "legend",
+      "group": "nd-row"
+    },
+    {
+      "name": "FD",
+      "_note": "command not confirmed — assumes the generic sim/autopilot command our own profile already uses; ToLiss's own override list has no FD press command, only the FD1Engage state dataref.",
+      "command": "sim/autopilot/fdir_command_bars_toggle",
+      "stateDataref": "AirbusFBW/FD1Engage",
+      "style": "legend",
+      "group": "fd-ls"
+    },
+    {
+      "name": "LS",
+      "command": "toliss_airbus/dispcommands/CaptLSButtonPush",
+      "stateDataref": "AirbusFBW/ILSonCapt",
+      "style": "legend",
+      "group": "fd-ls"
+    }
+  ],
+
+  "_gap_BRG1_BRG2": "No BRG-named command or dataref found at all (only NDBBearingArray/VORBearingArray, which look like computed *display* values for the bearing pointer needles, not the physical ADF/OFF/VOR selector switch position). Our own A330 profile's toggleSwitches (BRG1/BRG2, each 3 positions) has no ToLiss equivalent in this list. Left out entirely — needs live discovery to even confirm ToLiss's real hardware here has a directly-analogous 3-position switch.",
+
+  "readouts": [
+    {
+      "name": "BARO",
+      "label": "QNH",
+      "format": "baro",
+      "group": "baro",
+      "_note_value": "Absolute baro *value* dataref not confirmed — ToLiss's own list only has BaroKnobRotationCapt (a rotation delta/counter, not an absolute setting) plus BaroStdCapt/BaroUnitCapt. Assumes the value itself is still the generic X-Plane dataref (same one our own profile uses), since baro setting isn't an Airbus-specific concept the way STD/unit display logic is.",
+      "datarefs": {
+        "value": "sim/cockpit2/gauges/actuators/barometer_setting_in_hg_pilot",
+        "unit": "AirbusFBW/BaroUnitCapt",
+        "std": "AirbusFBW/BaroStdCapt"
+      },
+      "commands": {
+        "std": "toliss_airbus/capt_baro_pull",
+        "qnh": "toliss_airbus/capt_baro_push"
+      },
+      "encoder": {
+        "label": "PULL STD",
+        "writeDataref": "sim/cockpit/misc/barometer_setting",
+        "valueKey": "value",
+        "unitArc": {
+          "startLabel": "in Hg",
+          "endLabel": "hPa",
+          "writeDataref": "AirbusFBW/BaroUnitCapt",
+          "unitKey": "unit"
+        }
+      },
+      "_note_unit_ring": "AirbusFBW/BaroUnitCapt confirmed directly writable (not a command pair like the stock A330's setInHg/setHpa) — efis-adapter.js's setReadoutUnit()/efis-panel.js's wireBaroKnob() now support this shape generically (writes 0/1 directly, falling back from the command-pair path when unitArc has no startCommand/endCommand)."
+    },
+    {
+      "name": "MODE",
+      "format": "positionLabel",
+      "group": "selectors",
+      "display": false,
+      "_note": "Our own A330 profile uses paced increment/decrement commands for MODE (no writable dataref). ToLiss's own list has no equivalent knob-turn command at all for NDmodeCapt — deduced (by analogy with RANGE, which is in the same situation) that it's directly writable instead. Unconfirmed; if it turns out ToLiss *does* have discrete turn commands, this should switch to the commands.increment/decrement shape instead.",
+      "datarefs": {
+        "value": "AirbusFBW/NDmodeCapt"
+      },
+      "encoder": {
+        "positions": ["LS", "VOR", "NAV", "ARC", "PLAN", "ENG"],
+        "writeDataref": "AirbusFBW/NDmodeCapt",
+        "stepPx": 40
+      }
+    },
+    {
+      "name": "RANGE",
+      "format": "positionLabel",
+      "group": "selectors",
+      "display": false,
+      "_note": "Modeled as directly writable, same shape as our own A330 profile's RANGE (which already has no discrete commands) — AirbusFBW/NDrangeCapt looks like the same kind of plain index dataref. Unconfirmed live.",
+      "datarefs": {
+        "value": "AirbusFBW/NDrangeCapt"
+      },
+      "encoder": {
+        "positions": ["10", "20", "40", "80", "160", "320"],
+        "writeDataref": "AirbusFBW/NDrangeCapt",
+        "stepPx": 40
+      }
+    },
+    {
+      "name": "AVIONICS",
+      "format": "raw",
+      "_note": "No ToLiss-specific override found — assumes the generic X-Plane dataref (already true in our own A330 profile too).",
+      "datarefs": {
+        "value": "sim/cockpit/electrical/avionics_on"
+      }
+    }
+  ]
+}

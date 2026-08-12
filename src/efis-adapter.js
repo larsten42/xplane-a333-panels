@@ -54,6 +54,8 @@ export class EfisAdapter {
     this._readoutByName = new Map();
     /** @type {Map<string, number>} readout name -> resolved dataref id for its encoder.writeDataref, if any */
     this._encoderWriteIds = new Map();
+    /** @type {Map<string, number>} readout name -> resolved dataref id for its encoder.unitArc.writeDataref, if any — see setReadoutUnit() */
+    this._unitArcWriteIds = new Map();
     /** @type {Map<string, number>} "buttonName" or "readoutName.commandKey" -> command id, only entries that resolved */
     this._commandIds = new Map();
     /** @type {Map<string, {on: number[], off: number[]}>} button name -> resolved command ids for buttons with onCommands/offCommands instead of a single command */
@@ -88,6 +90,7 @@ export class EfisAdapter {
       ...buttons.map((b) => b.stateDataref).filter(Boolean),
       ...readouts.flatMap((r) => Object.values(r.datarefs)),
       ...readouts.flatMap((r) => (r.encoder?.writeDataref ? [r.encoder.writeDataref] : [])),
+      ...readouts.flatMap((r) => (r.encoder?.unitArc?.writeDataref ? [r.encoder.unitArc.writeDataref] : [])),
       ...toggleSwitches.map((s) => s.stateDataref),
     ];
 
@@ -207,6 +210,24 @@ export class EfisAdapter {
         );
       } else {
         this._encoderWriteIds.set(readout.name, writeId);
+      }
+    }
+
+    // Same idea as encoder.writeDataref above, but for a ring/arc's own
+    // two-position unit toggle (e.g. baro's inHg/hPa) on aircraft where
+    // that's a plain writable dataref rather than a command pair — see
+    // setReadoutUnit(). Kept as a separate field (not reusing
+    // encoder.writeDataref) since the two can legitimately be different
+    // datarefs, same as unitArc.startCommand/endCommand already being
+    // separate from commands.pull/push.
+    if (readout.encoder?.unitArc?.writeDataref) {
+      const writeId = datarefIds.get(readout.encoder.unitArc.writeDataref);
+      if (writeId == null) {
+        console.warn(
+          `[efis-adapter] readout "${readout.name}": encoder.unitArc.writeDataref "${readout.encoder.unitArc.writeDataref}" did not resolve`
+        );
+      } else {
+        this._unitArcWriteIds.set(readout.name, writeId);
       }
     }
 
@@ -362,6 +383,33 @@ export class EfisAdapter {
     this.readoutText.set(name, READOUT_FORMATS[readout.format](values, readout));
     this.onReadoutChange?.(name);
     this.client.setDatarefValue(writeId, next);
+    return true;
+  }
+
+  /**
+   * Sets a readout's encoder.unitArc-driven two-position unit toggle (e.g.
+   * baro's inHg/hPa ring) by writing encoder.unitArc.writeDataref directly
+   * — the writable-dataref counterpart to firing unitArc.startCommand/
+   * endCommand via press(), for aircraft that expose this as a plain
+   * dataref instead of a command pair. index 0 -> unitArc.startValue
+   * (default 0), index 1 -> unitArc.endValue (default 1).
+   */
+  setReadoutUnit(name, index) {
+    const readout = this._readoutByName.get(name);
+    const writeId = this._unitArcWriteIds.get(name);
+    const unitArc = readout?.encoder?.unitArc;
+    if (!readout || writeId == null || !unitArc) {
+      console.warn(`[efis-adapter] readout "${name}" has no encoder.unitArc.writeDataref; ignoring setReadoutUnit`);
+      return false;
+    }
+    const value = index === 0 ? unitArc.startValue ?? 0 : unitArc.endValue ?? 1;
+    const unitKey = unitArc.unitKey ?? "unit";
+    const values = this.readoutValues.get(name);
+
+    values[unitKey] = value;
+    this.readoutText.set(name, READOUT_FORMATS[readout.format](values, readout));
+    this.onReadoutChange?.(name);
+    this.client.setDatarefValue(writeId, value);
     return true;
   }
 

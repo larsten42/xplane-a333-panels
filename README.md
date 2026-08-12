@@ -131,7 +131,9 @@ layout, and the roadmap.
 
 For the X-Plane Web API protocol itself — endpoints, message formats, the
 CDU dataref layout, and rough edges found along the way — see
-[`docs/xplane-web-api-notes.md`](docs/xplane-web-api-notes.md).
+[`docs/xplane-web-api-notes.md`](docs/xplane-web-api-notes.md). For every
+dataref/command each panel actually uses, see
+[`docs/dataref-inventory.md`](docs/dataref-inventory.md).
 
 ## License
 

@@ -23,14 +23,25 @@ const BAR_HIDDEN_KEY = "mcdu.barHidden";
 const PANEL_KEY = "mcdu.panel";
 const AIRCRAFT_KEY = "mcdu.aircraft";
 
-// EFIS/FCU only have a profile for the Airbus — see ARCHITECTURE.md's
-// "Adding support for another aircraft" for why the 737's MCDU profile was
-// a low-effort add (X-Plane's default FMS/CDU is one shared program) while
-// EFIS/FCU are a much bigger, deliberately out-of-scope undertaking (real
-// hardware differs entirely — Boeing has an MCP, not an FCU).
+// Each panel type is independently gated by whether a profile exists for
+// the selected aircraft — see ARCHITECTURE.md's "Adding support for
+// another aircraft" for why the 737's MCDU profile was a low-effort add
+// (X-Plane's default FMS/CDU is one shared program) while EFIS/FCU need a
+// real per-aircraft profile (own dataref/command namespace) or, for a
+// genuinely different aircraft family (Boeing's MCP instead of an FCU), a
+// new panel entirely. A missing entry here just means that panel option
+// stays disabled for that aircraft (see applyAircraftAvailability()) —
+// none of these three maps need to agree on which aircraft they cover.
 const AIRCRAFT_MCDU_PROFILES = {
   a333: "./config/profiles/default-fms.json",
   b738: "./config/profiles/b738-fms.json",
+};
+const AIRCRAFT_EFIS_PROFILES = {
+  a333: "./config/profiles/efis-a333.json",
+  "toliss-airbus": "./config/profiles/efis-toliss-airbus.json",
+};
+const AIRCRAFT_FCU_PROFILES = {
+  a333: "./config/profiles/fcu-a333.json",
 };
 
 // Unlike EFIS/FCU, the radio panel lives under X-Plane's own generic
@@ -187,14 +198,13 @@ function restorePanel() {
   showPanel(panel);
 }
 
-// EFIS/FCU have no profile for anything but the Airbus, and "generic" (see
-// AIRCRAFT_MCDU_PROFILES above) has no MCDU profile at all — it exists
-// purely so the radio panel can be tested against a non-Airbus/non-737
-// default aircraft (e.g. a GA type) without also trying to connect
-// Airbus-specific MCDU/EFIS/FCU profiles against it, which would just pile
-// up unresolved-command noise for panels that were never going to work on
-// that aircraft anyway. Options are greyed out rather than left clickable
-// into a panel that would just show unresolved/disabled everything.
+// "generic" (see AIRCRAFT_MCDU_PROFILES above) has no MCDU/EFIS/FCU
+// profile at all — it exists purely so the radio panel can be tested
+// against a non-Airbus/non-737 default aircraft (e.g. a GA type) without
+// also trying to connect profiles that were never going to work on that
+// aircraft anyway, piling up unresolved-command noise. Options are greyed
+// out rather than left clickable into a panel that would just show
+// unresolved/disabled everything.
 els.aircraftSelect.addEventListener("change", () => {
   localStorage.setItem(AIRCRAFT_KEY, els.aircraftSelect.value);
   applyAircraftAvailability();
@@ -206,11 +216,14 @@ function restoreAircraft() {
 }
 
 function applyAircraftAvailability() {
-  const isAirbus = els.aircraftSelect.value === "a333";
-  const hasMcdu = Boolean(AIRCRAFT_MCDU_PROFILES[els.aircraftSelect.value]);
+  const aircraft = els.aircraftSelect.value;
+  const hasMcdu = Boolean(AIRCRAFT_MCDU_PROFILES[aircraft]);
+  const hasEfis = Boolean(AIRCRAFT_EFIS_PROFILES[aircraft]);
+  const hasFcu = Boolean(AIRCRAFT_FCU_PROFILES[aircraft]);
   for (const opt of els.panelSelect.options) {
-    if (opt.value === "efis" || opt.value === "fcu") opt.disabled = !isAirbus;
     if (opt.value === "mcdu") opt.disabled = !hasMcdu;
+    if (opt.value === "efis") opt.disabled = !hasEfis;
+    if (opt.value === "fcu") opt.disabled = !hasFcu;
   }
   // The radio panel (never disabled) is always a safe fallback once the
   // currently selected panel option becomes unavailable for this aircraft.
@@ -299,12 +312,14 @@ async function connect() {
 
   await client.connectSocket(els.panelSelect.value);
 
-  const isAirbus = els.aircraftSelect.value === "a333";
-  const mcduProfilePath = AIRCRAFT_MCDU_PROFILES[els.aircraftSelect.value];
+  const aircraft = els.aircraftSelect.value;
+  const mcduProfilePath = AIRCRAFT_MCDU_PROFILES[aircraft];
+  const efisProfilePath = AIRCRAFT_EFIS_PROFILES[aircraft];
+  const fcuProfilePath = AIRCRAFT_FCU_PROFILES[aircraft];
   const [mcduProfile, efisProfile, fcuProfile, radioProfile] = await Promise.all([
     mcduProfilePath ? fetch(mcduProfilePath).then((r) => r.json()) : null,
-    isAirbus ? fetch("./config/profiles/efis-a333.json").then((r) => r.json()) : null,
-    isAirbus ? fetch("./config/profiles/fcu-a333.json").then((r) => r.json()) : null,
+    efisProfilePath ? fetch(efisProfilePath).then((r) => r.json()) : null,
+    fcuProfilePath ? fetch(fcuProfilePath).then((r) => r.json()) : null,
     fetch(RADIO_PROFILE_PATH).then((r) => r.json()),
   ]);
 
@@ -331,18 +346,23 @@ async function connect() {
     mcduKeypad = null;
   }
 
-  // No EFIS/FCU profile for anything but the Airbus yet — see
-  // AIRCRAFT_MCDU_PROFILES above. Those panel options are already disabled
-  // in that case (applyAircraftAvailability()), and blankFcuPanel()/
-  // blankEfisPanel() from startup already leave both panels blank rather
-  // than stale demo data.
+  // No EFIS/FCU profile for every aircraft yet — see the AIRCRAFT_*_PROFILES
+  // maps above. Those panel options are already disabled in that case
+  // (applyAircraftAvailability()), and blankFcuPanel()/blankEfisPanel()
+  // from startup already leave both panels blank rather than stale demo
+  // data. EFIS and FCU are independently gated (unlike before, when one
+  // "isAirbus" flag controlled both) since a new aircraft can have one
+  // without the other — e.g. efis-toliss-airbus.json exists with no FCU
+  // counterpart yet.
   let efisAdapter = null;
-  let fcuAdapter = null;
-  if (isAirbus) {
+  if (efisProfile) {
     efisAdapter = new EfisAdapter(client, efisProfile);
     await efisAdapter.connect();
     wireEfisPanel(efisAdapter);
+  }
 
+  let fcuAdapter = null;
+  if (fcuProfile) {
     fcuAdapter = new EfisAdapter(client, fcuProfile);
     await fcuAdapter.connect();
     wireFcuPanel(fcuAdapter);

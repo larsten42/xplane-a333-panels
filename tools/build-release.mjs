@@ -31,6 +31,7 @@ const INCLUDE = [
   "config/profiles/default-fms.json",
   "config/profiles/b738-fms.json",
   "config/profiles/efis-a333.json",
+  "config/profiles/efis-toliss-airbus.json",
   "config/profiles/fcu-a333.json",
   "config/profiles/radio-panel-generic.json",
   "src/app.js",
