@@ -133,7 +133,9 @@ For the X-Plane Web API protocol itself — endpoints, message formats, the
 CDU dataref layout, and rough edges found along the way — see
 [`docs/xplane-web-api-notes.md`](docs/xplane-web-api-notes.md). For every
 dataref/command each panel actually uses, see
-[`docs/dataref-inventory.md`](docs/dataref-inventory.md).
+[`docs/dataref-inventory.md`](docs/dataref-inventory.md). Want to send back
+a fix or a verified dataref, but never used GitHub for that before? See
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
