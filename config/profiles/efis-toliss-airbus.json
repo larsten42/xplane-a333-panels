@@ -14,40 +14,40 @@
     },
     {
       "name": "WPT",
-      "_note": "command not confirmed — ToLiss's own list has no override, so this assumes it reuses the generic X-Plane command our own A330 profile already uses (not laminar/A333-specific to begin with).",
-      "command": "sim/instruments/EFIS_fix",
+      "_note": "command confirmed.",
+      "command": "toliss_airbus/dispcommands/CaptWptPushButton",
       "stateDataref": "AirbusFBW/NDShowWPTCapt",
       "style": "legend",
       "group": "nd-row"
     },
     {
       "name": "VOR.D",
-      "_note": "command not confirmed — same reasoning as WPT above.",
-      "command": "sim/instruments/EFIS_vor",
+      "_note": "command confirmed.",
+      "command": "toliss_airbus/dispcommands/CaptVorDPushButton",
       "stateDataref": "AirbusFBW/NDShowVORDCapt",
       "style": "legend",
       "group": "nd-row"
     },
     {
       "name": "NDB",
-      "_note": "command not confirmed — same reasoning as WPT above.",
-      "command": "sim/instruments/EFIS_ndb",
+      "_note": "command confirmed.",
+      "command": "toliss_airbus/dispcommands/CaptNdbPushButton",
       "stateDataref": "AirbusFBW/NDShowNDBCapt",
       "style": "legend",
       "group": "nd-row"
     },
     {
       "name": "ARPT",
-      "_note": "command not confirmed — same reasoning as WPT above.",
-      "command": "sim/instruments/EFIS_apt",
+      "_note": "command confirmed.",
+      "command": "toliss_airbus/dispcommands/CaptArptPushButton",
       "stateDataref": "AirbusFBW/NDShowARPTCapt",
       "style": "legend",
       "group": "nd-row"
     },
     {
       "name": "FD",
-      "_note": "command not confirmed — assumes the generic sim/autopilot command our own profile already uses; ToLiss's own override list has no FD press command, only the FD1Engage state dataref.",
-      "command": "sim/autopilot/fdir_command_bars_toggle",
+      "_note": "command confirmed.",
+      "command": "toliss_airbus/fd1_push",
       "stateDataref": "AirbusFBW/FD1Engage",
       "style": "legend",
       "group": "fd-ls"
