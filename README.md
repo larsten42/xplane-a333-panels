@@ -2,9 +2,10 @@
 
 Web-based cockpit panels for X-Plane 12's stock aircraft — a full **MCDU**,
 **EFIS**, and **FCU** set for the Airbus A330, **MCDU**-only support for the
-Boeing 737-800, and a **Radio** stack (COM/NAV/ADF/DME) that works with any
-of X-Plane's default aircraft — all in one page, switched with a **Panel**
-selector (and an **Aircraft** selector for which airframe's MCDU to use).
+Boeing 737-800, an experimental **EFIS** profile for the ToLiss Airbus
+add-on, and a **Radio** stack (COM/NAV/ADF/DME) that works with any of
+X-Plane's default aircraft — all in one page, switched with a **Panel**
+selector (and an **Aircraft** selector for which airframe to use).
 Runs in any browser, no X-Plane plugin to install.
 
 ## Quick start
@@ -37,22 +38,27 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
 
 - **MCDU** — Airbus A330 or Boeing 737-800, picked with the **Aircraft**
   selector. Both are the default/stock aircraft only; add-on airliners
-  (Zibo, FlightFactor, ToLiss, ...) replace the default FMS entirely and
-  aren't supported.
-- **EFIS** and **FCU** — Airbus A330 only. Boeing's real hardware is
-  different enough (an MCP instead of an FCU, a different EFIS control
-  panel) that supporting the 737 here means a new panel design, not a
-  config change — not done, and not close.
-- **FCU** is the newest of the three Airbus panels: every button, knob, and
-  display is wired to a real command/dataref and usable, but it's had
-  less real-flight mileage than MCDU/EFIS, and a couple of annunciators
-  (LVLCH) have no confirmed driving dataref yet.
-- **Radio** — COM1/COM2/NAV1/NAV2/ADF/DME tuning and audio-select, plus a
-  shared **Generic** aircraft option in the selector for using it without
-  also connecting an Airbus/737 MCDU. Unlike the other panels, this one
-  lives under X-Plane's own generic radio-stack namespace, not an
-  aircraft-specific one, so it works with any default X-Plane aircraft that
-  has the standard radio stack. Transponder mode isn't wired yet.
+  (Zibo, FlightFactor, ToLiss, ...) replace the default FMS entirely, so
+  the MCDU screen specifically isn't supported for any of them yet.
+- **EFIS** — Airbus A330 (stock), plus an **experimental** profile for the
+  ToLiss Airbus add-on. The ToLiss one was built by matching against a
+  public dataref/command reference, not verified on real ToLiss hardware —
+  a couple of controls (BRG1/BRG2, the ND mode knob) are still unconfirmed
+  or unwired. See [`CONTRIBUTING.md`](CONTRIBUTING.md) if you can help
+  verify it.
+- **FCU** — Airbus A330 (stock) only; Boeing's real hardware is different
+  enough (an MCP instead of an FCU) that supporting the 737 means a new
+  panel design, not a config change. It's the newest of the Airbus panels:
+  every button, knob, and display is wired to a real command/dataref and
+  usable, but it's had less real-flight mileage than MCDU/EFIS, and a
+  couple of annunciators (LVLCH) have no confirmed driving dataref yet.
+- **Radio** — COM1/COM2/NAV1/NAV2/ADF1/ADF2/DME tuning, audio-select, and a
+  MIC SEL transmit selector, plus a shared **Generic** aircraft option in
+  the selector for using it without also connecting an Airbus/737 MCDU.
+  Unlike the other panels, this one lives under X-Plane's own generic
+  radio-stack namespace, not an aircraft-specific one, so it works with any
+  default X-Plane aircraft that has the standard radio stack. Transponder
+  mode isn't wired yet.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full known-limitations
 list and the roadmap.
