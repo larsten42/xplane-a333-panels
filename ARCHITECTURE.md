@@ -223,9 +223,11 @@ wiring up a new profile.
 ### EFIS
 
 - **Rotary knobs** (ND mode, map range, baro): click-drag vertically to
-  turn, snapping to detents for ND mode/range. A short tap on the baro
-  knob pulls (engage STD); press-and-hold (~400ms) pushes (revert to the
-  selected QNH).
+  turn, snapping to detents for ND mode/range — a fixed px-per-detent
+  threshold (`drag-step`, see `vendor/README.md`'s `fcu-instruments.js`
+  entry), not angle-following, so a slightly wobbly touch doesn't
+  register. A short tap on the baro knob pulls (engage STD); press-and-hold
+  (~400ms) pushes (revert to the selected QNH).
 - **Bearing-pointer levers** (BRG1/BRG2): drag or tap a third to swing the
   lever between ADF/OFF/VOR.
 - **Baro concentric ring**: the outer ring around the baro knob is a
@@ -253,10 +255,13 @@ wiring up a new profile.
 
 ### Radio
 
-- **Two independent units** (upper/lower), each a 6-position selector
-  (COM1/COM2/NAV1/NAV2/ADF/DME) with its own active/standby seven-segment
-  pair, tuning knob, and ACT/STBY swap button — matching two real radios
-  stacked in one panel, not one shared selector.
+- **Two independent units** (upper/lower), each with its own active/
+  standby seven-segment pair, tuning knob, and ACT/STBY swap button —
+  matching two real radios stacked in one panel. Each unit's own selector
+  is a *fixed* subset, not a shared 6-position dial: unit 1 is COM1/NAV1/
+  ADF1, unit 2 is COM2/NAV2/ADF2/DME (DME is a single physical unit shared
+  by the whole panel, not DME1/DME2 — see the profile's own description
+  for the live-confirmed dataref evidence).
 - **Tuning knob**: grab distance from center picks coarse (MHz, outer
   ring) vs fine (kHz, inner boss) per gesture, with a lit legend showing
   which is active. Press-and-hold (~400ms) swaps, same as the dedicated
@@ -270,9 +275,12 @@ wiring up a new profile.
   the band edges (136.500 → coarse up → 118.500) instead of hard-stopping
   — both confirmed live against the real X-Plane commands, including
   COM's non-uniform real 8.33kHz channel grid within each MHz (see
-  `nextStandbyRaw()`'s own comment for the exact pattern).
-- **Audio select row**: six two-position switches (COM1/COM2/NAV1/NAV2/
-  ADF/DME) below both units, tap-to-flip.
+  `nextStandbyRaw()`'s own comment for the exact pattern). All knobs are
+  press-and-drag-vertically, not point-at-the-detent — see `vendor/README.md`'s
+  `fcu-instruments.js` entry for the touch-sensitivity tuning this shares
+  with the FCU/EFIS knobs.
+- **Audio select row**: seven two-position switches (COM1/COM2/NAV1/NAV2/
+  ADF1/ADF2/DME) below both units, tap-to-flip.
 - **MIC SEL**: a two-position lever between the COM1/COM2 audio switches
   picking which radio transmits (`sim/audio_panel/transmit_audio_com{1,2}`
   — one-shot select commands, not toggles). Its state dataref

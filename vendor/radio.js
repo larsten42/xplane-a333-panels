@@ -21,43 +21,51 @@
   var ROW = { 1: 108, 2: 266 };
 
   /* selector positions, in knob order (0 = straight up, negative = ccw) */
-  var ANGLES = [0, -30, -60, -90, -120, -150];
+  /* 45deg spacing puts ADF at straight west on both knobs */
+  var ANGLES = [0, -45, -90, -135];
 
-  var BANDS = [
-    /* fine=5 matches X-Plane's real 8.33kHz-spacing standby-tune commands
-       (sim/radios/stby_com{1,2}_fine_up/down_833) -- confirmed live against
-       X-Plane 12.4.3 2026-08-11: isolated single presses stepped the
-       standby dataref by exactly 5 every time (e.g. 123305 -> 123310),
-       never 25. The previous 25 was the "everywhere but this sim" 25kHz
-       default step; this sim exposes true 8.33kHz-precision tuning.
-       max=136990, not 136975 -- walking the real fine_up_833 command
-       through the 136 decade live (2026-08-12) showed it reaches
-       136980/136985/136990 exactly like every other decade; 975 was
-       simply wrong (probably copied from the real-world ICAO ceiling for
-       the *old* 25kHz-spacing COM band, which doesn't apply once this
-       sim's true 8.33kHz-precision datarefs are in play). */
-    { k: 'COM1', label: 'COM 1', dp: 3, min: 118000, max: 136990, fine: 5, coarse: 1000, zero: true },
-    { k: 'COM2', label: 'COM 2', dp: 3, min: 118000, max: 136990, fine: 5, coarse: 1000, zero: true },
-    { k: 'NAV1', label: 'NAV 1', dp: 3, min: 108000, max: 117950, fine: 50, coarse: 1000, zero: true },
-    { k: 'NAV2', label: 'NAV 2', dp: 3, min: 108000, max: 117950, fine: 50, coarse: 1000, zero: true },
-    { k: 'ADF', label: 'ADF', dp: -1, min: 190, max: 1750, fine: 1, coarse: 100, zero: false },
-    { k: 'DME', label: 'DME', dp: 3, min: 108000, max: 117950, fine: 50, coarse: 1000, zero: true }
-  ];
+  /* fine=5 matches X-Plane's real 8.33kHz-spacing standby-tune commands
+     (sim/radios/stby_com{1,2}_fine_up/down_833) -- confirmed live against
+     X-Plane 12.4.3 2026-08-11: isolated single presses stepped the
+     standby dataref by exactly 5 every time (e.g. 123305 -> 123310),
+     never 25. The previous 25 was the "everywhere but this sim" 25kHz
+     default step; this sim exposes true 8.33kHz-precision tuning.
+     max=136990, not 136975 -- walking the real fine_up_833 command
+     through the 136 decade live (2026-08-12) showed it reaches
+     136980/136985/136990 exactly like every other decade; 975 was
+     simply wrong (probably copied from the real-world ICAO ceiling for
+     the *old* 25kHz-spacing COM band, which doesn't apply once this
+     sim's true 8.33kHz-precision datarefs are in play). */
+  var COM = { dp: 3, min: 118000, max: 136990, fine: 5, coarse: 1000, zero: true };
+  var NAV = { dp: 3, min: 108000, max: 117950, fine: 50, coarse: 1000, zero: true };
+  var ADF = { dp: -1, min: 190, max: 1750, fine: 1, coarse: 100, zero: false };
+
+  function band(k, label, spec) {
+    return { k: k, label: label, dp: spec.dp, min: spec.min, max: spec.max,
+             fine: spec.fine, coarse: spec.coarse, zero: spec.zero };
+  }
+
+  /* unit 2 carries one extra notch (DME) at the same angular spacing */
+  var BANDS = {
+    1: [band('COM1', 'COM 1', COM), band('NAV1', 'NAV 1', NAV), band('ADF1', 'ADF 1', ADF)],
+    2: [band('COM2', 'COM 2', COM), band('NAV2', 'NAV 2', NAV), band('ADF2', 'ADF 2', ADF),
+        band('DME', 'DME', NAV)]
+  };
 
   var SEED = {
-    1: { COM1: [118000, 121500], COM2: [119100, 135275], NAV1: [110500, 113900],
-         NAV2: [108800, 117950], ADF: [350, 525], DME: [113800, 116200] },
-    2: { COM1: [124850, 126700], COM2: [122800, 133050], NAV1: [110500, 113900],
-         NAV2: [109300, 112400], ADF: [410, 690], DME: [115200, 110900] }
+    1: { COM1: [118000, 121500], NAV1: [110500, 113900], ADF1: [350, 525] },
+    2: { COM2: [119100, 135275], NAV2: [109300, 112400], ADF2: [410, 690],
+         DME: [115200, 110900] }
   };
 
   var AUDIO = [
     { id: 'aud-com1', label: 'COM 1', x: 136, on: true },
-    { id: 'aud-com2', label: 'COM 2', x: 304 },
-    { id: 'aud-nav1', label: 'NAV 1', x: 472 },
-    { id: 'aud-nav2', label: 'NAV 2', x: 640 },
-    { id: 'aud-adf', label: 'ADF', x: 808 },
-    { id: 'aud-dme', label: 'DME', x: 976 }
+    { id: 'aud-com2', label: 'COM 2', x: 286 },
+    { id: 'aud-nav1', label: 'NAV 1', x: 436 },
+    { id: 'aud-nav2', label: 'NAV 2', x: 586 },
+    { id: 'aud-adf1', label: 'ADF 1', x: 736 },
+    { id: 'aud-adf2', label: 'ADF 2', x: 886 },
+    { id: 'aud-dme', label: 'DME', x: 1036 }
   ];
 
   function cap(x, y, text, opts) {
@@ -74,14 +82,33 @@
       'px;height:1px;background:' + SILK_DIM + '"></div>';
   }
 
+  /* selector cluster: 85px knob (33% up from 64 for touch), centred at SEL_CX */
+  var SEL_SIZE = 85, SEL_CX = 158, SEL_LABEL_R = 70;
+
+  function unitAngles(u) { return ANGLES.slice(0, BANDS[u].length); }
+
   /* detent ticks around a selector knob */
-  function ticks(cx, cy) {
+  function ticks(u, cx, cy) {
     var out = '<div style="position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:0;height:0;pointer-events:none">';
-    ANGLES.forEach(function (a) {
-      out += '<i style="position:absolute;left:-1px;top:-4.5px;width:2px;height:9px;border-radius:1px;' +
-        'background:rgba(207,213,216,.75);transform:rotate(' + a + 'deg) translateY(-42px)"></i>';
+    unitAngles(u).forEach(function (a) {
+      out += '<i style="position:absolute;left:-1px;top:-5.5px;width:2px;height:11px;border-radius:1px;' +
+        'background:rgba(207,213,216,.75);transform:rotate(' + a + 'deg) translateY(-54px)"></i>';
     });
     return out + '</div>';
+  }
+
+  /* band names ringed around the knob, one per detent */
+  function selLabels(u, cx, cy) {
+    var out = '';
+    unitAngles(u).forEach(function (a, i) {
+      var rad = a * Math.PI / 180;
+      var x = Math.round(cx + SEL_LABEL_R * Math.sin(rad));
+      var y = Math.round(cy - SEL_LABEL_R * Math.cos(rad));
+      out += a === 0
+        ? cap(cx, cy - SEL_LABEL_R, BANDS[u][i].label)
+        : cap(x, y, BANDS[u][i].label, { transform: 'translate(-100%,-50%)' });
+    });
+    return out;
   }
 
   var SWAP_UP = '0 4px 9px rgba(0,0,0,.6), inset 0 1px 1px rgba(255,255,255,.9), inset 0 -3px 6px rgba(0,0,0,.28)';
@@ -108,17 +135,13 @@
   }
 
   function unit(u, cy) {
-    var b0 = BANDS[u === 1 ? 0 : 2];
+    var b0 = BANDS[u][0];
     var pair = SEED[u][b0.k];
-    return ticks(148, cy) +
-      '<fcu-selector-knob knob-id="sel' + u + '" size="64" index="' + (u === 1 ? 0 : 2) + '" ' +
-        'angles="' + ANGLES.join(',') + '" style="position:absolute;left:116px;top:' + (cy - 32) + 'px"></fcu-selector-knob>' +
-      cap(148, cy - 64, 'COM 1') +
-      cap(116, cy - 55, 'COM 2', { transform: 'translate(-100%,-50%)' }) +
-      cap(93, cy - 32, 'NAV 1', { transform: 'translate(-100%,-50%)' }) +
-      cap(84, cy, 'NAV 2', { transform: 'translate(-100%,-50%)' }) +
-      cap(93, cy + 32, 'ADF', { transform: 'translate(-100%,-50%)' }) +
-      cap(116, cy + 55, 'DME', { transform: 'translate(-100%,-50%)' }) +
+    return ticks(u, SEL_CX, cy) +
+      '<fcu-selector-knob knob-id="sel' + u + '" size="' + SEL_SIZE + '" index="0" ' +
+        'angles="' + unitAngles(u).join(',') + '" style="position:absolute;left:' + (SEL_CX - SEL_SIZE / 2) +
+        'px;top:' + (cy - SEL_SIZE / 2) + 'px"></fcu-selector-knob>' +
+      selLabels(u, SEL_CX, cy) +
 
       seg('r' + u + 'a', cy, 240, pair[0]) +
       seg('r' + u + 's', cy, 520, pair[1]) +
@@ -139,10 +162,10 @@
      left = COM1, right = COM2. Labelled MIC SEL, as on a real audio panel. */
   function micSel() {
     return '<fcu-lever lever-id="mic-sel" size="44" position="left" ' +
-      'style="position:absolute;left:198px;top:402px"></fcu-lever>' +
-      cap(181, 424, '1') +
-      cap(259, 424, '2') +
-      cap(220, 462, 'MIC SEL');
+      'style="position:absolute;left:189px;top:402px"></fcu-lever>' +
+      cap(172, 424, '1') +
+      cap(250, 424, '2') +
+      cap(211, 462, 'MIC SEL');
   }
 
   function audioRow() {
@@ -160,7 +183,7 @@
       if (this._built) return;
       this._built = true;
 
-      this.sel = { 1: 0, 2: 2 };
+      this.sel = { 1: 0, 2: 0 };
       this.mode = { 1: 'fine', 2: 'fine' };
       this.bezelAngle = { 1: 0, 2: 0 };
       this.fineAngle = { 1: 0, 2: 0 };
@@ -202,11 +225,11 @@
         display: function (id) { return self.disp[id] || null; },
         /* unit is 1 (upper) or 2 (lower) */
         band: function (u) { return self._band(u).k; },
-        bands: BANDS.map(function (b) { return b.k; }),
+        bands: function (u) { return BANDS[u].map(function (b) { return b.k; }); },
         setBand: function (u, i) {
           var k = api.knob('sel' + u);
           if (k) k.setIndex(i);
-          self.sel[u] = Math.max(0, Math.min(BANDS.length - 1, i));
+          self.sel[u] = Math.max(0, Math.min(BANDS[u].length - 1, i));
           self._paint();
         },
         onBand: function (fn) { self._bandCb = fn; },
@@ -261,7 +284,7 @@
           sel.knob.onChange(function (i) {
             self.sel[u] = i;
             self._paint();
-            if (self._bandCb) self._bandCb(u, BANDS[i].k);
+            if (self._bandCb) self._bandCb(u, BANDS[u][i].k);
           });
         }
         var t = self.querySelector('[data-knob="tune' + u + '"]');
@@ -325,7 +348,7 @@
 
     /* ------------------------------------------------------------- tuning */
 
-    _band(u) { return BANDS[this.sel[u]]; }
+    _band(u) { return BANDS[u][this.sel[u]]; }
 
     _tune(u, dir) {
       var b = this._band(u);

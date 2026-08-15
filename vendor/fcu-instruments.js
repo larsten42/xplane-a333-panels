@@ -23,6 +23,10 @@
   var SEG_OFF = 'rgba(230,214,170,.07)';
   var LABEL_OFF = 'rgba(232,220,184,.16)';
 
+  function capture(el, id) {
+    try { el.setPointerCapture(id); } catch (err) { /* best-effort: stray pointer id */ }
+  }
+
   function alpha(hex, a) {
     var m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
     if (!m) return 'rgba(247,220,140,' + a + ')';
@@ -638,36 +642,42 @@
         if (self._turnCb) self._turnCb(dir);
       }, { passive: false });
 
-      var dragging = false, lastY = 0, moved = 0, holdTimer = null, pushed = false;
+      var dragging = false, startY = 0, moved = 0, holdTimer = null, pushed = false;
       var HOLD_MS = num(this, 'hold-ms', 400);
+      /* touch-first: one detent per DRAG_STEP px of vertical travel, up = increment */
+      var DRAG_STEP = num(this, 'drag-step', 14);
       this.addEventListener('pointerdown', function (e) {
         if (self._ringHit && self._ringHit(e)) return;
-        self.setPointerCapture(e.pointerId);
-        dragging = true; lastY = e.clientY; moved = 0; pushed = false;
+        capture(self, e.pointerId);
+        dragging = true; startY = e.clientY; moved = 0; pushed = false;
         // hold the knob to PUSH; a short tap is a PULL
         holdTimer = setTimeout(function () {
           holdTimer = null;
-          if (moved >= 6) return;
+          if (moved >= DRAG_STEP) return;
           pushed = true;
           if (self._pushCb) self._pushCb();
         }, HOLD_MS);
       });
       this.addEventListener('pointermove', function (e) {
         if (!dragging) return;
-        var dy = lastY - e.clientY;
-        if (Math.abs(dy) < 6) return;
-        lastY = e.clientY; moved += Math.abs(dy);
+        var dy = startY - e.clientY;
+        moved = Math.max(moved, Math.abs(dy));
+        if (Math.abs(dy) < DRAG_STEP) return;
+        var steps = Math.trunc(dy / DRAG_STEP);
+        startY -= steps * DRAG_STEP;
         if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-        var dir = dy > 0 ? 1 : -1;
-        api.turn(dir * num(self, 'detent', 15));
-        if (self._turnCb) self._turnCb(dir);
+        var dir = steps > 0 ? 1 : -1;
+        for (var i = 0; i < Math.abs(steps); i++) {
+          api.turn(dir * num(self, 'detent', 15));
+          if (self._turnCb) self._turnCb(dir);
+        }
       });
       var endDrag = function (e) {
         if (!dragging) return;
         dragging = false;
         if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
         if (self.hasPointerCapture(e.pointerId)) self.releasePointerCapture(e.pointerId);
-        if (moved < 6 && !pushed && self._pullCb) self._pullCb();
+        if (moved < DRAG_STEP && !pushed && self._pullCb) self._pullCb();
       };
       this.addEventListener('pointerup', endDrag);
       this.addEventListener('pointercancel', endDrag);
@@ -827,11 +837,38 @@
       this.knob = api;
       this.api = api;
 
+      /* drag-invert="true": flips which way "up"/wheel-forward walks the
+         index, for a knob face whose labels are laid out running the
+         opposite rotational sense from the default (e.g. EFIS's ND
+         mode/range, whose label positions match a real Airbus hardware
+         photo and can't just be moved to match — see vendor/README.md's
+         fcu-instruments.js entry). Default false leaves every existing
+         caller (the round <fcu-knob>'s own wheel handling, and any other
+         <fcu-selector-knob> like the radio panel's band selector)
+         unchanged, so "up = clockwise" stays true panel-to-panel even
+         though the two knob faces sweep their labels in opposite
+         directions. */
+      var invert = flag(this, 'drag-invert', false);
+
       this.addEventListener('wheel', function (e) {
         e.preventDefault();
-        self._setIndex(self.index + (e.deltaY > 0 ? -1 : 1), true);
+        var dir = e.deltaY > 0 ? 1 : -1;
+        self._setIndex(self.index + (invert ? -dir : dir), true);
       }, { passive: false });
 
+      /* touch-first: press and drag up/down, one detent per DRAG_STEP px.
+         drag-mode="angle" keeps the old point-at-the-detent behaviour. */
+      var SEL_STEP = num(this, 'drag-step', 40);
+      var dragY = 0;
+      var dragTo = function (e) {
+        var dy = dragY - e.clientY;
+        if (Math.abs(dy) < SEL_STEP) return;
+        var steps = Math.trunc(dy / SEL_STEP);
+        dragY -= steps * SEL_STEP;
+        /* labels run clockwise from the top, so dragging UP walks back up
+           the list -- drag-invert flips this, see its own comment above. */
+        self._setIndex(self.index - steps * (invert ? -1 : 1), true);
+      };
       var snapTo = function (e) {
         var r = self.getBoundingClientRect();
         var ang = Math.atan2(e.clientX - (r.left + r.width / 2), (r.top + r.height / 2) - e.clientY) * 180 / Math.PI;
@@ -841,11 +878,16 @@
       };
       this.addEventListener('pointerdown', function (e) {
         e.preventDefault();
-        self.setPointerCapture(e.pointerId);
+        capture(self, e.pointerId);
         self._dragging = true;
-        snapTo(e);
+        if (self.getAttribute('drag-mode') === 'angle') snapTo(e);
+        else dragY = e.clientY;
       });
-      this.addEventListener('pointermove', function (e) { if (self._dragging) snapTo(e); });
+      this.addEventListener('pointermove', function (e) {
+        if (!self._dragging) return;
+        if (self.getAttribute('drag-mode') === 'angle') snapTo(e);
+        else dragTo(e);
+      });
       var end = function (e) {
         self._dragging = false;
         if (self.hasPointerCapture(e.pointerId)) self.releasePointerCapture(e.pointerId);
@@ -1058,7 +1100,7 @@
       };
       this.addEventListener('pointerdown', function (e) {
         e.preventDefault();
-        self.setPointerCapture(e.pointerId);
+        capture(self, e.pointerId);
         self._dragging = true;
         pick(e);
       });
@@ -1313,13 +1355,13 @@
           svgWrap(260, 81, modeSvg) +
           cap(285, 124, 'ROSE') +
           '<fcu-selector-knob knob-id="nd-mode" size="112" collar="false" ring="false" angles="-90,-45,0,45,90" index="2" ' +
-            'style="position:absolute;left:304px;top:125px"></fcu-selector-knob>' +
+            'drag-invert="true" style="position:absolute;left:304px;top:125px"></fcu-selector-knob>' +
           cap(293, 181, 'LS') + cap(303, 140, 'VOR') + cap(360, 116, 'NAV') +
           cap(417, 140, 'ARC') + cap(439, 181, 'PLAN') +
 
           svgWrap(490, 81, rangeSvg) +
           '<fcu-selector-knob knob-id="nd-range" size="112" collar="false" ring="false" angles="-90,-45,0,45,90,135" index="2" ' +
-            'style="position:absolute;left:534px;top:125px"></fcu-selector-knob>' +
+            'drag-invert="true" style="position:absolute;left:534px;top:125px"></fcu-selector-knob>' +
           cap(525, 181, '10') + cap(538, 130, '20') + cap(590, 116, '40') +
           cap(642, 130, '80') + cap(659, 181, '160') + cap(642, 232, '320') +
 

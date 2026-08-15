@@ -2,7 +2,7 @@
   "id": "xplane12-generic-radio-panel",
   "aircraft": "Generic X-Plane 12 default GA radio stack",
   "label": "X-Plane 12 default COM/NAV/ADF/DME/XPDR radio stack",
-  "description": "Dataref/command mapping for a generic COM1/COM2/NAV1/NAV2/ADF/DME/XPDR radio panel, confirmed live against a running X-Plane 12.4.3 with the stock Beechcraft King Air C90 (ICAO B9L) loaded (2026-08-11). Everything here lives under the plain sim/radios, sim/audio_panel, and sim/transponder namespaces (not laminar/c90/...), which is X-Plane's own generic radio-stack implementation shared across its default GA aircraft the same way the default FMS/CDU is (see b738-fms.json) — expected to generalize to other default aircraft with the standard radio stack, but re-verify before trusting unchanged; add-on aircraft with custom avionics won't have any of this. Verified live: com1's coarse/fine standby-tune commands step the standby frequency by the expected amount, its flip command cleanly swaps active<->standby, the ADF hundreds_thous/ones_tens commands (per explicit confirmation, not a guess) step the standby ADF frequency correctly, and the transponder_12/34_up/down commands step the expected digit pairs of the squawk code.",
+  "description": "Dataref/command mapping for a generic COM1/COM2/NAV1/NAV2/ADF1/ADF2/DME/XPDR radio panel, confirmed live against a running X-Plane 12.4.3 with the stock Beechcraft King Air C90 (ICAO B9L) loaded (2026-08-11, ADF2 added 2026-08-15). Everything here lives under the plain sim/radios, sim/audio_panel, and sim/transponder namespaces (not laminar/c90/...), which is X-Plane's own generic radio-stack implementation shared across its default GA aircraft the same way the default FMS/CDU is (see b738-fms.json) — expected to generalize to other default aircraft with the standard radio stack, but re-verify before trusting unchanged; add-on aircraft with custom avionics won't have any of this. Verified live: com1's coarse/fine standby-tune commands step the standby frequency by the expected amount, its flip command cleanly swaps active<->standby, the ADF hundreds_thous/ones_tens commands (per explicit confirmation, not a guess) step the standby ADF frequency correctly, and the transponder_12/34_up/down commands step the expected digit pairs of the squawk code. DME is a single physical unit shared by both radio units on the panel (not DME1/DME2) — confirmed live 2026-08-14 there's no numbered DME frequency dataref or tune command at all, only a DME_slave_source mode dataref (not currently wired) that can slave its one tunable frequency to NAV1/NAV2 instead of standalone tuning.",
 
   "_note_on_xpdr_mode": "Deliberately not wired yet — transponder_mode is a live-confirmed 8-state enum (off=0, standby=1, on=2, alt=3, test=4, ground=5, ta_only=6, ta_ra=7), not the simple ON/OFF the panel brief calls for. Add once it's decided how that collapses.",
   "_note_on_xpdr_audio": "No XPDR entry in the audio-toggle row — transponders don't have an audio channel to monitor in X-Plane's model (no sim/audio_panel/monitor_audio_xpdr-shaped command exists), unlike the other six radios.",
@@ -68,7 +68,7 @@
       }
     },
     {
-      "name": "ADF",
+      "name": "ADF1",
       "format": "raw",
       "datarefs": {
         "active": "sim/cockpit2/radios/actuators/adf1_frequency_hz",
@@ -77,6 +77,21 @@
       "commands": { "swap": "sim/radios/adf1_standy_flip" },
       "encoder": {
         "writeDataref": "sim/cockpit2/radios/actuators/adf1_standby_frequency_hz",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "ADF2",
+      "format": "raw",
+      "_note": "Added 2026-08-15 alongside the panel's fixed per-unit band layout (unit 2 now carries ADF2 instead of a shared ADF slot) -- confirmed live: adf2_frequency_hz/adf2_standby_frequency_hz, adf2_standy_flip, monitor_audio_adf2, and audio_selection_adf2 all resolve and behave identically to their ADF1 counterparts.",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/adf2_frequency_hz",
+        "standby": "sim/cockpit2/radios/actuators/adf2_standby_frequency_hz"
+      },
+      "commands": { "swap": "sim/radios/adf2_standy_flip" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/adf2_standby_frequency_hz",
         "valueKey": "standby",
         "stepValue": 1
       }
@@ -144,9 +159,14 @@
       "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_nav2"
     },
     {
-      "name": "ADF",
+      "name": "ADF1",
       "command": "sim/audio_panel/monitor_audio_adf1",
       "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_adf1"
+    },
+    {
+      "name": "ADF2",
+      "command": "sim/audio_panel/monitor_audio_adf2",
+      "stateDataref": "sim/cockpit2/radios/actuators/audio_selection_adf2"
     },
     {
       "name": "DME",

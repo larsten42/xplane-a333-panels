@@ -32,7 +32,8 @@ const LEVER_ID_TO_BAND = {
   "aud-com2": "COM2",
   "aud-nav1": "NAV1",
   "aud-nav2": "NAV2",
-  "aud-adf": "ADF",
+  "aud-adf1": "ADF1",
+  "aud-adf2": "ADF2",
   "aud-dme": "DME",
 };
 
@@ -40,7 +41,7 @@ const LEVER_ID_TO_BAND = {
 // pre-scaled to the same "freq * 1000" shape (6 digits, decimal at index 3
 // — confirmed live 2026-08-11 e.g. COM1's _833 dataref: 118505 = 118.505).
 // COM1/COM2 already come out of the sim that way via the _833 datarefs, and
-// ADF is a bare kHz integer with no decimal at all — neither needs scaling.
+// ADF1/ADF2 are bare kHz integers with no decimal at all — neither needs scaling.
 // NAV1/NAV2/DME only carry 2 real decimal digits (confirmed live: raw 10815
 // = 108.15, not 108.150), so those need x10 to land on the same 6-digit/
 // 3-decimal shape without losing or fabricating precision.
@@ -56,7 +57,8 @@ const STEP = {
   NAV1: { coarse: 100, fine: 5 },
   NAV2: { coarse: 100, fine: 5 },
   DME: { coarse: 100, fine: 5 },
-  ADF: { coarse: 100, fine: 1 },
+  ADF1: { coarse: 100, fine: 1 },
+  ADF2: { coarse: 100, fine: 1 },
 };
 
 // Real standby range per band, in raw units — a final safety clamp so a
@@ -72,7 +74,8 @@ const RAW_RANGE = {
   NAV1: { min: 10800, max: 11795 },
   NAV2: { min: 10800, max: 11795 },
   DME: { min: 10800, max: 11795 },
-  ADF: { min: 190, max: 1750 },
+  ADF1: { min: 190, max: 1750 },
+  ADF2: { min: 190, max: 1750 },
 };
 const clamp = (value, band) => {
   const range = RAW_RANGE[band];
@@ -86,7 +89,7 @@ const mod = (n, m) => ((n % m) + m) % m;
 // likewise wraps cleanly at 99->00 without touching the hundreds digit).
 // COM1/COM2 are handled separately below — their real 8.33kHz grid isn't
 // uniform.
-const FINE_SPAN = { NAV1: 100, NAV2: 100, DME: 100, ADF: 100 };
+const FINE_SPAN = { NAV1: 100, NAV2: 100, DME: 100, ADF1: 100, ADF2: 100 };
 
 // COM's real 8.33kHz channel grid isn't a uniform every-5 sequence within
 // one MHz — confirmed live 2026-08-11 by walking the real fine_up_833

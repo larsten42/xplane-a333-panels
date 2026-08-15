@@ -435,17 +435,43 @@ export class EfisAdapter {
    */
   adjustReadoutIndex(name, deltaSteps) {
     const readout = this._readoutByName.get(name);
+    const valueKey = readout?.encoder?.valueKey ?? "value";
+    const confirmed = Math.round(Number(this.readoutValues.get(name)?.[valueKey] ?? 0));
+    const pending = this._pendingSteps.get(name) ?? 0;
+    return this.setReadoutIndex(name, confirmed + pending + deltaSteps);
+  }
+
+  /**
+   * Like adjustReadoutIndex(), but takes the *absolute* target index a
+   * caller already knows (e.g. a detent selector's onChange, which hands
+   * back the absolute index the user dragged/scrolled to) instead of a
+   * relative delta. Use this whenever the caller has an absolute target —
+   * computing "delta = target - currentDisplayedValue" on the caller's
+   * side goes stale and double-counts across a burst of quick calls
+   * (mouse wheel, a fast drag), since the displayed value is deliberately
+   * never updated optimistically here (see the class-level reasoning
+   * above): confirmed live 2026-08-15 as the cause of the ND mode knob
+   * overshooting and visibly snapping back during a burst (RANGE doesn't
+   * hit this — its writeDataref path in adjustReadoutValue() already
+   * updates the tracked value optimistically, so its own delta computation
+   * in efis-panel.js's wireDetentKnob() stays accurate across a burst).
+   * Deriving
+   * the queued delta from the adapter's own tracked confirmed+pending
+   * state instead keeps every call in a burst correctly additive.
+   */
+  setReadoutIndex(name, targetIndex) {
+    const readout = this._readoutByName.get(name);
     const positions = readout?.encoder?.positions;
     if (!readout || !positions) {
-      console.warn(`[efis-adapter] readout "${name}" has no encoder.positions; ignoring adjust`);
+      console.warn(`[efis-adapter] readout "${name}" has no encoder.positions; ignoring setReadoutIndex`);
       return false;
     }
     const valueKey = readout.encoder.valueKey ?? "value";
     const confirmed = Math.round(Number(this.readoutValues.get(name)?.[valueKey] ?? 0));
     const pending = this._pendingSteps.get(name) ?? 0;
     const predicted = confirmed + pending; // real state, plus whatever's still queued/in flight
-    const next = Math.min(positions.length - 1, Math.max(0, predicted + deltaSteps));
-    if (next === predicted) return true; // already at an end stop, nothing more to queue
+    const next = Math.min(positions.length - 1, Math.max(0, targetIndex));
+    if (next === predicted) return true; // already at (or already queued to) this target
 
     this._pendingSteps.set(name, pending + (next - predicted));
     this._drainSteps(name);

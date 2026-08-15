@@ -173,17 +173,28 @@ function refreshBaroRing(efis, adapter) {
 // RANGE does — same distinction ALT/SPD/HDG/VS already draw on the FCU
 // side; see efis-adapter.js's adjustReadoutValue vs adjustReadoutIndex.
 // Both selector knobs report the *absolute* target index the user dragged
-// or clicked to (not a per-detent direction the way onTurn's dir is), so
-// this converts that into the relative delta each adjust method wants.
+// or clicked to (not a per-detent direction the way onTurn's dir is).
+// RANGE's writeDataref path tracks its own value optimistically, so
+// computing a relative delta from adapter.getReadoutValue() here stays
+// accurate turn after turn; MODE's paced-command path deliberately
+// doesn't (see adjustReadoutIndex()'s own comment), so a caller-computed
+// delta from that same stale value double-counts across a burst of quick
+// onChange calls — confirmed live 2026-08-15 as the cause of the ND mode
+// knob overshooting and snapping back on a fast drag or mouse-wheel
+// burst. setReadoutIndex() takes the absolute target directly and derives
+// the queued delta from the adapter's own tracked state instead, so it
+// stays correct regardless of how quickly onChange fires.
 // Also not power-gated, for the same reason as the baro ring.
 function wireDetentKnob(efis, adapter, knobId, readoutName, hasWriteDataref) {
   const knob = efis.knob(knobId);
   knob.onChange((targetIndex) => {
-    const current = Math.round(Number(adapter.getReadoutValue(readoutName, "value")) || 0);
-    const delta = targetIndex - current;
-    if (delta === 0) return;
-    if (hasWriteDataref) adapter.adjustReadoutValue(readoutName, delta);
-    else adapter.adjustReadoutIndex(readoutName, delta);
+    if (hasWriteDataref) {
+      const current = Math.round(Number(adapter.getReadoutValue(readoutName, "value")) || 0);
+      const delta = targetIndex - current;
+      if (delta !== 0) adapter.adjustReadoutValue(readoutName, delta);
+    } else {
+      adapter.setReadoutIndex(readoutName, targetIndex);
+    }
   });
 }
 

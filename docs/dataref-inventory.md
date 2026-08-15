@@ -126,21 +126,21 @@ the A330/737-800, see the profile's own `description`.
 
 - `sim/cockpit2/radios/actuators/com{1,2}_frequency_hz_833`, `com{1,2}_standby_frequency_hz_833`
 - `sim/cockpit2/radios/actuators/nav{1,2}_frequency_hz`, `nav{1,2}_standby_frequency_hz`
-- `sim/cockpit2/radios/actuators/dme_frequency_hz`, `dme_standby_frequency_hz`
-- `sim/cockpit2/radios/actuators/adf1_frequency_hz`, `adf1_standby_frequency_hz`
+- `sim/cockpit2/radios/actuators/dme_frequency_hz`, `dme_standby_frequency_hz` (a single physical DME shared by the whole panel — no `dme1`/`dme2`-numbered frequency dataref exists at all, confirmed live)
+- `sim/cockpit2/radios/actuators/adf{1,2}_frequency_hz`, `adf{1,2}_standby_frequency_hz`
 - `sim/cockpit2/radios/actuators/transponder_code`
-- `sim/cockpit2/radios/actuators/audio_selection_com1`, `com2`, `nav1`, `nav2`, `adf1`, `dme1`
+- `sim/cockpit2/radios/actuators/audio_selection_com1`, `com2`, `nav1`, `nav2`, `adf1`, `adf2`, `dme1`
 - `sim/cockpit2/radios/actuators/audio_com_selection` (MIC SEL state — not a clean 0/1 enum, read by parity, see the profile's own `_note`)
 
 ### Commands
 
-- `sim/radios/com1_standy_flip`, `com2_standy_flip`, `nav1_standy_flip`, `nav2_standy_flip`, `adf1_standy_flip` (ACT/STBY swap — "standy" is X-Plane's own real spelling, not a typo here)
+- `sim/radios/com1_standy_flip`, `com2_standy_flip`, `nav1_standy_flip`, `nav2_standy_flip`, `adf1_standy_flip`, `adf2_standy_flip` (ACT/STBY swap — "standy" is X-Plane's own real spelling, not a typo here)
 - `sim/radios/dme_standby_flip` (correctly spelled, unlike the others)
-- `sim/audio_panel/monitor_audio_com1`, `com2`, `nav1`, `nav2`, `adf1`, `dme`
+- `sim/audio_panel/monitor_audio_com1`, `com2`, `nav1`, `nav2`, `adf1`, `adf2`, `dme`
 - `sim/audio_panel/transmit_audio_com1`, `transmit_audio_com2` (MIC SEL — one-shot select, not toggles; deliberately not the `_man` variants, which X-Plane's own description flags as "old panel, doesn't change listener")
 - `sim/transponder/transponder_12_up`, `_down`, `transponder_34_up`, `_down` (resolved but not yet wired to the UI — see "Known limitations")
 
-Standby tuning (COM/NAV/DME/ADF) writes the standby-frequency dataref
+Standby tuning (COM/NAV/DME/ADF1/ADF2) writes the standby-frequency dataref
 directly rather than firing step commands — see `src/radio-panel.js`'s own
 top comment for why. The `stby_*_coarse/fine_up/down` step commands aren't
 listed above since nothing in the app fires them anymore.
