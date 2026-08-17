@@ -15,6 +15,9 @@
   <!-- Defines <radio-panel>, built from the primitives above — must load
        after fcu-instruments.js. See vendor/README.md. -->
   <script src="./vendor/radio.js"></script>
+  <!-- Defines <rmp-panel>/<acp-panel>, also built from the primitives
+       above — must load after fcu-instruments.js. See vendor/README.md. -->
+  <script src="./vendor/rmp.js"></script>
 </head>
 <body>
   <header class="connection-bar">
@@ -32,6 +35,7 @@
         <option value="efis">EFIS</option>
         <option value="fcu">FCU</option>
         <option value="radio">Radio</option>
+        <option value="rmp">RMP+ACP</option>
       </select>
     </label>
     <label class="mcdu-only-control">CDU
@@ -111,6 +115,20 @@
   <div id="panel-radio" class="panel-content" hidden>
     <div class="scalable-panel">
       <radio-panel></radio-panel>
+    </div>
+  </div>
+
+  <!-- Stock A330 RTP (radio management) + ACP (audio control), Captain's
+       side only, VHF1/VHF2 for now — see src/rmp-panel.js and
+       config/profiles/rmp-acp-a333.json. Two stacked scalable-panel
+       wrappers rather than one shared one, since panel-autoscale.js scales
+       one fixed-size vendored element per container. -->
+  <div id="panel-rmp" class="panel-content" hidden>
+    <div class="scalable-panel">
+      <rmp-panel></rmp-panel>
+    </div>
+    <div class="scalable-panel">
+      <acp-panel></acp-panel>
     </div>
   </div>
 

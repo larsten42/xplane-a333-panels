@@ -103,6 +103,62 @@ over these two files, reload and sanity-check all three panels (the shared
 library file affects FCU/EFIS too), and check `src/radio-panel.js` against
 the new bundle's own integration doc if any method names/signatures moved.
 
+## rmp.js
+
+The Airbus RMP (Radio Management Panel)/ACP (Audio Control Panel) component
+("Claude Design"'s vanilla build, same origin as fcu-instruments.js — native
+Web Components, zero dependencies, no build step). Defines `<rmp-panel>` and
+`<acp-panel>`, built from fcu-instruments.js's existing primitives
+(`<fcu-led-button led="none">` for the legend-only Airbus pushbuttons) plus
+one component type local to this file: `<acp-knob>` (continuous
+reception-volume pot with a tap-to-toggle lamp). Loaded after
+fcu-instruments.js, same as radio.js.
+
+**2026-08-16 ACP row-1 rework**: the transmit/CALL row (VHF1/VHF2/VHF3/
+HF1/HF2/INT/CAB, plus PA in the middle band) switched from the file's own
+one-off `<acp-key>` (dark, no backlight/LED distinction) to the standard
+three-stripe-LED `<fcu-led-button>` fcu-instruments.js already uses
+elsewhere — `led="none"`/`backlit="false"` on VOICE/RESET/the CALL keys, so
+LEDs and legend backlight are independently controllable
+(`key(id).setLed(on)` for the green stripes, `key(id).setBacklight(on)` for
+the amber legend). `acp.key(id)` now resolves to that `<fcu-led-button>`'s
+API instead of `<acp-key>`'s — **`setLit()` is gone, it's `setLed()` now**
+(`isLit()`/`onPress()` unchanged) — `src/rmp-panel.js` updated to match.
+`<acp-key>` itself is still defined (for anything that referenced it
+directly) but nothing in this file's own markup uses it anymore.
+
+**2026-08-16 window globals (hand-patched here, needs relaying upstream to
+Design so the next bundle keeps it)**: unlike radio.js (`window.radioPanel`)
+and fcu-instruments.js (`window.fcuPanel`/`window.efis`), the delivered
+`rmp.js` didn't expose `window.rmpPanel`/`window.acpPanel` — only the
+`rmp-ready`/`acp-ready` custom events. Patched `connectedCallback()` in both
+`RmpPanel`/`AcpPanel` to also set the window global, matching how every
+other vendored panel component here already does it, so `src/rmp-panel.js`
+doesn't need its own one-off ready-event listener just for this file.
+
+**2026-08-16 `<acp-knob>` `onTap()` hook (hand-patched here, needs relaying
+upstream to Design so the next bundle keeps it)**: the delivered `AcpKnob`
+only exposed a self-contained tap-toggles-its-own-lamp gesture, with
+nothing for wiring code to intercept — the lamp state was purely local,
+with no way to drive it from a real command/dataref (needed for the ACP's
+per-channel "listen" reception toggle, a 16-element array dataref — see
+`config/profiles/rmp-acp-a333.json`'s `_note_on_listen_toggle`). Patched
+`AcpKnob`'s `connectedCallback()` to add `onTap(fn)`, called instead of the
+built-in `toggleLamp()` on a tap once a handler is registered (unregistered
+knobs — every other channel's volume pot — keep the old self-toggle
+behavior unchanged, so this is purely additive). `src/rmp-panel.js` uses it
+to fire the real `listen_press00`/`listen_press01` commands and drive the
+lamp only from the sim's confirmed `listen_status`, never an unconfirmed
+local guess.
+
+**Integration scope**: `src/rmp-panel.js` currently only wires VHF1/VHF2
+(COM1/COM2) — see `config/profiles/rmp-acp-a333.json`'s own description for
+what's still unwired (VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP and the
+ACP's INT/CAB/PA/nav-reception rows). ACP reception volume is wired but
+doesn't actually reach the sim yet — see the profile's own
+`_gap_acp_volume_write`, an X-Plane Web API bug, not something fixable
+here.
+
 ## qrcode-generator.js
 
 [Kazuhiko Arase's `qrcode-generator`](https://github.com/kazuhikoarase/qrcode-generator)

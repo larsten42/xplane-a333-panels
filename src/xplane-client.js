@@ -203,12 +203,23 @@ export class XPlaneClient {
    * Subscribe to a dataref's value stream (pushed ~10Hz by X-Plane).
    * @param {number} id
    * @param {(value: any) => void} onValue
+   * @param {number[]} [index] - for array datarefs, the element indices to
+   *   track (e.g. [0, 1]); the callback then receives an array of just
+   *   those elements, in that order, instead of the whole dataref. Plain
+   *   numeric arrays come back as ordinary JSON arrays on the wire, not
+   *   base64 (base64 is only for "data"/byte-string typed datarefs — see
+   *   docs/xplane-web-api-notes.md), so no decoding is needed here.
+   *   Note: the subscribe request is only sent once per id (on the first
+   *   subscriber), so every caller sharing an id must agree on the same
+   *   `index` — this doesn't support two callers each wanting a different
+   *   slice of the same array dataref. Not a problem for how this is
+   *   actually used today (one indexed subscription per array dataref).
    */
-  subscribeDataref(id, onValue) {
+  subscribeDataref(id, onValue, index) {
     const isFirst = !this._datarefListeners.has(id);
     if (isFirst) this._datarefListeners.set(id, new Set());
     this._datarefListeners.get(id).add(onValue);
-    if (isFirst) this._send("dataref_subscribe_values", { datarefs: [{ id }] });
+    if (isFirst) this._send("dataref_subscribe_values", { datarefs: [index ? { id, index } : { id }] });
   }
 
   unsubscribeDataref(id, onValue) {

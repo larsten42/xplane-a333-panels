@@ -1,12 +1,13 @@
 # X-Plane A330 Panels
 
 Web-based cockpit panels for X-Plane 12's stock aircraft — a full **MCDU**,
-**EFIS**, and **FCU** set for the Airbus A330, **MCDU**-only support for the
-Boeing 737-800, an experimental **EFIS** profile for the ToLiss Airbus
-add-on, and a **Radio** stack (COM/NAV/ADF/DME) that works with any of
-X-Plane's default aircraft — all in one page, switched with a **Panel**
-selector (and an **Aircraft** selector for which airframe to use).
-Runs in any browser, no X-Plane plugin to install.
+**EFIS**, and **FCU** set for the Airbus A330, an early **RMP+ACP** (radio
+management/audio control) panel for the same aircraft, **MCDU**-only
+support for the Boeing 737-800, an experimental **EFIS** profile for the
+ToLiss Airbus add-on, and a **Radio** stack (COM/NAV/ADF/DME) that works
+with any of X-Plane's default aircraft — all in one page, switched with a
+**Panel** selector (and an **Aircraft** selector for which airframe to
+use). Runs in any browser, no X-Plane plugin to install.
 
 ## Quick start
 
@@ -48,10 +49,10 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
   verify it.
 - **FCU** — Airbus A330 (stock) only; Boeing's real hardware is different
   enough (an MCP instead of an FCU) that supporting the 737 means a new
-  panel design, not a config change. It's the newest of the Airbus panels:
-  every button, knob, and display is wired to a real command/dataref and
-  usable, but it's had less real-flight mileage than MCDU/EFIS, and a
-  couple of annunciators (LVLCH) have no confirmed driving dataref yet.
+  panel design, not a config change. Every button, knob, and display is
+  wired to a real command/dataref and usable, but it's had less
+  real-flight mileage than MCDU/EFIS, and a couple of annunciators
+  (LVLCH) have no confirmed driving dataref yet.
 - **Radio** — COM1/COM2/NAV1/NAV2/ADF1/ADF2/DME tuning, audio-select, and a
   MIC SEL transmit selector, plus a shared **Generic** aircraft option in
   the selector for using it without also connecting an Airbus/737 MCDU.
@@ -59,6 +60,17 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
   radio-stack namespace, not an aircraft-specific one, so it works with any
   default X-Plane aircraft that has the standard radio stack. Transponder
   mode isn't wired yet.
+- **RMP+ACP** — Airbus A330 (stock) only, and **early**: the newest panel
+  here, scoped to VHF1/VHF2 (COM1/COM2) for its first pass rather than the
+  whole real unit. What's there is live-verified and usable — tuning
+  (including the real coarse/fine 8.33kHz-grid behavior the Radio panel
+  has), channel select, transfer, power, transmit-select, and the ACP's
+  per-channel listen toggle. VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP
+  and the ACP's INT/CAB/PA/nav-reception rows aren't wired yet, and ACP
+  reception volume can't actually reach the sim — X-Plane's own Web API
+  rejects the write with an error, on this aircraft's specific datarefs,
+  not something fixable from here. See
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) for the details.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full known-limitations
 list and the roadmap.
@@ -111,8 +123,8 @@ it shows — `http://localhost:5173` on the X-Plane machine, or
 `http://<that machine's LAN IP>:5173` from a tablet — and press
 **Connect**. There's no host or port to configure; the page always talks
 back to whatever server it loaded from. Use the **Panel** selector in the
-top bar to switch between MCDU, EFIS, FCU, and Radio — all four share the
-one connection, so there's no need to reconnect when switching.
+top bar to switch between MCDU, EFIS, FCU, Radio, and RMP+ACP — all five
+share the one connection, so there's no need to reconnect when switching.
 
 ## Extras
 

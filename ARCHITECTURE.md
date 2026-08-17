@@ -11,7 +11,7 @@ still missing.
 ┌──────────────────┐  ws/http  ┌──────────────────┐  ws/http  ┌──────────────────┐
 │ index.html +      │◄────────►│  static files +   │◄────────►│ built-in Web API │
 │ src/*.js + vendor/ │ port 5173│  /api/* proxy     │ localhost│  (REST + WS)     │
-│ (MCDU/EFIS/FCU UI) │          │  (REST + WS relay)│  :8086   └──────────────────┘
+│ (all panel UIs)   │          │  (REST + WS relay)│  :8086   └──────────────────┘
 └──────────────────┘          └──────────────────┘
 ```
 
@@ -24,7 +24,7 @@ ever talks to whatever host and port served it the page — it never needs
 X-Plane's address directly, which is what lets a tablet connect without any
 setup beyond opening a URL.
 
-All four panels share this one connection and one `XPlaneClient` instance
+All five panels share this one connection and one `XPlaneClient` instance
 (`src/xplane-client.js`); each panel just has its own adapter translating
 between the page's DOM and X-Plane's datarefs/commands. `mcdu-adapter.js`
 decodes the CDU's character-grid datarefs into a screen model. `efis-adapter.js`
@@ -33,17 +33,22 @@ datarefs and commands — genuinely EFIS-agnostic under the hood, so the same
 class is reused as-is for the FCU's and Radio's profiles too. Neither
 `mcdu-adapter.js` nor any `efis-adapter.js` instance knows the others exist.
 
-EFIS, FCU, and Radio all render through `vendor/fcu-instruments.js` — a
-third-party, dependency-free Web Components library (native custom
+EFIS, FCU, Radio, and RMP+ACP all render through `vendor/fcu-instruments.js`
+— a third-party, dependency-free Web Components library (native custom
 elements, no build step) that defines `<efis-panel>`, `<fcu-panel>`, and
 their constituent knobs/buttons/levers/displays; `vendor/radio.js` builds
-`<radio-panel>` from those same primitives. `src/efis-panel.js`,
-`src/fcu-panel.js`, and `src/radio-panel.js` are the glue: they hold all
+`<radio-panel>` and `vendor/rmp.js` builds `<rmp-panel>`/`<acp-panel>` from
+those same primitives. `src/efis-panel.js`, `src/fcu-panel.js`,
+`src/radio-panel.js`, and `src/rmp-panel.js` are the glue: they hold all
 the X-Plane-specific knowledge and wire a profile-driven `EfisAdapter` to
 that library's imperative JS API (`window.efis`/`window.fcuPanel`/
-`window.fcu`/`window.radioPanel`). The vendored files themselves are never
-edited — see `vendor/README.md` for how to bring in an updated bundle.
-MCDU still renders through its own hand-written DOM
+`window.fcu`/`window.radioPanel`/`window.rmpPanel`/`window.acpPanel`). The
+vendored files are meant to stay a plain drop-in copy — see
+`vendor/README.md` for how to bring in an updated bundle — but a couple of
+small, deliberately minimal gaps have been hand-patched directly into them
+rather than worked around here, each documented in `vendor/README.md` with
+a note that it needs relaying upstream to Design so the next bundle keeps
+it. MCDU still renders through its own hand-written DOM
 (`mcdu-screen.js`/`mcdu-keypad.js`), not this library.
 
 For the full X-Plane Web API protocol reference — endpoints, message
@@ -79,7 +84,8 @@ output, so they match the page's look.
 
 ## Progressive Web App
 
-`manifest.webmanifest` + `icons/icon.svg` give the MCDU/EFIS/FCU/Radio page
+`manifest.webmanifest` + `icons/icon.svg` give the MCDU/EFIS/FCU/Radio/
+RMP+ACP page
 (`index.html`, not the operator console) a proper icon and name for
 Android's Chrome "Add to Home Screen" — confirmed on a real device:
 without HTTPS (see below), Chrome doesn't treat this as an installable
@@ -119,9 +125,9 @@ This starts a small stand-in server that mimics enough of the Web API to
 click through the MCDU, useful for confirming everything's wired up before
 pointing it at a real sim. You should see "MCDU MOCK SERVER" on line 1 and
 be able to type on the scratchpad line using the on-screen keypad. The mock
-server only covers the MCDU screen dataref today — EFIS, FCU, and Radio all
-need a real X-Plane instance to test against (see "Known limitations"
-below).
+server only covers the MCDU screen dataref today — EFIS, FCU, Radio, and
+RMP+ACP all need a real X-Plane instance to test against (see "Known
+limitations" below).
 
 ## Building a distributable copy
 
@@ -169,11 +175,20 @@ wiring up a new profile.
 
 ## Known limitations
 
-- The FCU panel is the newest of the three and still a work in progress:
-  every button, knob, and display is wired to a real command/dataref and
-  usable, but it's had less real-flight mileage than MCDU/EFIS and a
-  couple of annunciators (LVLCH) have no confirmed driving dataref yet —
-  see the Roadmap below for the current list.
+- The FCU panel is still a work in progress: every button, knob, and
+  display is wired to a real command/dataref and usable, but it's had less
+  real-flight mileage than MCDU/EFIS and a couple of annunciators (LVLCH)
+  have no confirmed driving dataref yet — see the Roadmap below for the
+  current list.
+- RMP+ACP is the newest panel and the least complete one: it covers
+  VHF1/VHF2 (COM1/COM2) only, deliberately scoped down from the real
+  unit's full channel set for its first pass. What's wired there is
+  live-verified, including the real coarse/fine 8.33kHz-grid tuning
+  behavior shared with the Radio panel and the ACP's per-channel listen
+  toggle — but VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP and the ACP's
+  INT/CAB/PA/nav-reception rows aren't wired yet, and ACP reception volume
+  can't actually reach the sim (X-Plane's own Web API rejects the write —
+  see "ACP reception volume" under RMP+ACP's own Interface entry below).
 - MCDU supports the stock A330 and 737-800 (an **Aircraft** selector picks
   the profile); EFIS and FCU are Airbus-only — Boeing's real hardware is
   an MCP, not an FCU, with its own different EFIS control panel, so
@@ -197,8 +212,9 @@ wiring up a new profile.
   a live dataref/command scan (unlike the Airbus, which uses a plain
   press-up/down command pair). Left unwired rather than guessed.
 - `npm run mock`'s mock X-Plane server only implements the MCDU screen
-  dataref — EFIS's, FCU's, and Radio's buttons, readouts, and knobs/levers
-  aren't mocked yet, so testing any of them needs a real X-Plane instance.
+  dataref — EFIS's, FCU's, Radio's, and RMP+ACP's buttons, readouts, and
+  knobs/levers aren't mocked yet, so testing any of them needs a real
+  X-Plane instance.
 - Brightness and annunciator-light datarefs were found alongside the MCDU
   keypad mapping but aren't wired into the interface yet.
 - No automatic reconnect, no multi-tablet coordination beyond X-Plane's own
@@ -296,6 +312,54 @@ wiring up a new profile.
   **Generic** option, for using it without also connecting an Airbus/737
   MCDU.
 
+### RMP+ACP
+
+Airbus A330 (stock) only — the stock/default aircraft's own RTP (X-Plane's
+name for the real-hardware RMP) + ACP, Captain's side, **VHF1/VHF2 only for
+now** — see `config/profiles/rmp-acp-a333.json`'s own description for the
+full reasoning and what's still unwired.
+
+- **Channel select**: VHF1/VHF2 pushbuttons pick which underlying radio
+  (COM1/COM2) the shared active/standby display and tuning knob currently
+  target — a green caret marks the selected one. Confirmed live the RTP's
+  own tuning isn't a separate frequency store: turning its knob while VHF2
+  is selected writes the same `com2_standby_frequency_hz_833` dataref the
+  Radio panel already uses directly, so the tuning knob here reuses that
+  same direct-write path rather than the RTP's own step commands.
+- **Tuning knob**: the whole coarse/fine behavior is ported wholesale from
+  the Radio panel rather than reimplemented — this delivery's RMP tune
+  knob is the same kind of plain, ring-less `<fcu-knob>` the Radio panel's
+  own tune knobs are, so `src/rmp-panel.js` bolts on the identical
+  grab-near-center(fine)/grab-near-edge(coarse) gesture `vendor/radio.js`
+  implements internally, plus `src/radio-panel.js`'s exact `nextStandbyRaw()`
+  for the real 8.33kHz-grid fine stepping and coarse-ring wraparound at the
+  band edges.
+- **Transfer key**: swaps the selected channel's active/standby, same
+  `laminar/A333/rtp_L/freq_txfr/sel_switch` command a real transfer key
+  fires.
+- **Power lever**: on/off, confirmed live `off_status` is 1 when off (0
+  when on) — modeled inverted so "lit" reads as "powered on".
+- **ACP transmit-select**: VHF1/VHF2 keys, confirmed live mutually
+  exclusive on the sim side (`mic_status1`/`mic_status2`).
+- **ACP reception volume**: VHF1/VHF2 pots (drag) read the sim's live level
+  fine, but writing one currently doesn't reach the sim — X-Plane's Web API
+  rejects fractional writes to these specific `double`-typed datarefs with
+  an "incompatible_data" error (confirmed live against this build's
+  X-Plane 12.4.3; a known-good `float`-typed dataref accepts the same kind
+  of write fine), so this looks like a sim-side bug rather than anything
+  fixable here. Left wired anyway in case a future X-Plane patch resolves
+  it — see the profile's `_gap_acp_volume_write`.
+- **ACP listen toggle**: tapping (not dragging) a VHF1/VHF2 volume pot
+  fires the real `listen_press00`/`listen_press01` command for that
+  channel and lights the lamp only once the sim confirms it via
+  `listen_status` (a 16-element array dataref, index 0 = VHF1/index 1 =
+  VHF2) — never an unconfirmed local guess. Needed a small hand-patch to
+  `<acp-knob>` (an `onTap()` hook — see `vendor/README.md`'s `rmp.js`
+  entry) since the delivered component only had a self-contained
+  tap-toggles-its-own-lamp gesture with nothing to intercept.
+- **Not wired yet**: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the
+  ACP's INT/CAB/PA/nav-reception rows.
+
 ### Shared
 
 - **Aircraft selector**: switches which MCDU profile loads (Airbus A330 /
@@ -305,13 +369,14 @@ wiring up a new profile.
   limitations"); the currently-selected panel falls back to Radio if it
   becomes disabled. Takes effect on the next Connect/Reconnect, not live.
 - **Panel selector**: switches the main content between MCDU, EFIS, FCU,
-  and Radio, top bar included, without dropping the connection.
+  Radio, and RMP+ACP, top bar included, without dropping the connection.
 - **Full screen**: the button in the top-right hides the connection
   controls, for flying without clutter on screen.
-- **Auto-scale** (EFIS/FCU/Radio only): a "FIT" toggle in the top-right
-  scales the active panel to fill the available window space (recomputed
-  on resize); toggling it off shows the panel at its native pixel size.
-  Persists across reloads, one shared preference across all three panels.
+- **Auto-scale** (EFIS/FCU/Radio/RMP+ACP only): a "FIT" toggle in the
+  top-right scales the active panel to fill the available window space
+  (recomputed on resize); toggling it off shows the panel at its native
+  pixel size. Persists across reloads, one shared preference across all
+  panels.
 
 ## Adding support for another aircraft
 
@@ -353,9 +418,12 @@ flag exactly what's confirmed vs. deduced vs. genuinely missing (the LS
 button, BRG1/BRG2 selector, and baro unit-ring toggle had no plausible
 match at all). Wire into `AIRCRAFT_EFIS_PROFILES` in `app.js` the same way
 as `efis-a333.json`; verify every row with `tools/discover.mjs` before
-trusting it. Note this only covers EFIS — MCDU's *screen* (not its keys)
-and the Radio panel both assume a data/interaction shape ToLiss doesn't
-share, so porting those needs real code changes, not just a profile.
+trusting it. Note this only covers EFIS — MCDU's *screen* (not its keys),
+the Radio panel, and RMP+ACP all assume a data/interaction shape ToLiss
+doesn't share (RMP+ACP most of all: it's built directly against the stock
+A330's own `laminar/A333/rtp_L/...`/`.../audio/capt/...` namespace, nothing
+like ToLiss's `AirbusFBW/RMP{1,2,3}`), so porting those needs real code
+changes, not just a profile.
 
 **MCDU** (`default-fms.json`-shaped) has four parts:
 
@@ -440,7 +508,7 @@ ever replaces the vendored library, both are worth re-evaluating.
 ## Project layout
 
 ```
-index.html                        the page — MCDU + EFIS + FCU + Radio markup, Panel selector
+index.html                        the page — MCDU + EFIS + FCU + Radio + RMP+ACP markup, Panel selector
 console.html                      operator console page — see "Operator console" above
 manifest.webmanifest              PWA manifest for index.html — see "Progressive Web App" above
 icons/icon.svg                    app icon, referenced by the manifest and both pages' favicons
@@ -450,6 +518,7 @@ fonts/                            B612 Mono — see "Fonts" above
 vendor/
   fcu-instruments.js                 third-party FCU+EFIS+Radio component library, used as-is — see vendor/README.md
   radio.js                           third-party <radio-panel> element, built on the above — see vendor/README.md
+  rmp.js                              third-party <rmp-panel>/<acp-panel> elements, built on the above — see vendor/README.md
   qrcode-generator.js                third-party QR encoder, used as-is — see vendor/README.md
 src/
   xplane-client.js                 REST + WebSocket wrapper around X-Plane's Web API
@@ -462,8 +531,9 @@ src/
   efis-panel.js                       wires an EfisAdapter to vendor/fcu-instruments.js's <efis-panel>
   fcu-panel.js                         wires an EfisAdapter to vendor/fcu-instruments.js's <fcu-panel>
   radio-panel.js                        wires an EfisAdapter to vendor/radio.js's <radio-panel>
+  rmp-panel.js                           wires an EfisAdapter to vendor/rmp.js's <rmp-panel>/<acp-panel>
   readout-formats.js                   per-readout display-text formatting (QNH, mode/range labels, FCU windows)
-  panel-autoscale.js                   fits <efis-panel>/<fcu-panel>/<radio-panel> to their container via a computed CSS transform
+  panel-autoscale.js                   fits <efis-panel>/<fcu-panel>/<radio-panel>/<rmp-panel>/<acp-panel> to their container via a computed CSS transform
   console.js                           polls/renders the operator console — no X-Plane/adapter concepts at all
 config/profiles/
   default-fms.json                  MCDU dataref/command mapping for the stock A330's FMS
@@ -472,6 +542,7 @@ config/profiles/
   efis-toliss-airbus.json           EFIS mapping for the ToLiss Airbus add-on — deduced, not live-verified, see its own _note/_gap_* fields
   fcu-a333.json                     FCU dataref/command mapping for the stock FCU (Airbus only)
   radio-panel-generic.json          Radio dataref/command mapping — aircraft-generic, not Airbus/737-specific
+  rmp-acp-a333.json                 RMP+ACP dataref/command mapping for the stock A330's RTP/ACP — VHF1/VHF2 only so far, see its own _note_on_*/_gap_* fields
 docs/xplane-web-api-notes.md      protocol reference notes + sources
 docs/dataref-inventory.md         every dataref/command each panel actually uses, derived from config/profiles/
 tools/
@@ -493,7 +564,13 @@ tools/
   cause not yet identified.
 - The baro concentric ring's click target on the vendored EFIS knob is
   quite small — a Design polish item, not an instrumentation gap.
-- EFIS/FCU/Radio support in the mock server, so all three can be
+- RMP+ACP: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the ACP's
+  INT/CAB/PA/nav-reception rows.
+- ACP reception volume writes are currently rejected by X-Plane itself
+  (confirmed live "incompatible_data" error on these specific
+  `double`-typed datarefs) — likely an X-Plane Web API bug, not fixable
+  here; see `config/profiles/rmp-acp-a333.json`'s `_gap_acp_volume_write`.
+- EFIS/FCU/Radio/RMP+ACP support in the mock server, so all four can be
   developed/tested without a running X-Plane instance too.
 - Transponder mode/on-off on the Radio panel, once it's decided how the
   real 8-state mode enum collapses onto a simple control.

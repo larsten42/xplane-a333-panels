@@ -127,9 +127,11 @@ const COARSE_WRAPS = new Set(["COM1", "COM2", "NAV1", "NAV2", "DME"]);
  * current+direction*step arithmetic — which carried fine-tune overflow
  * into the MHz/hundreds digit, and hard-stopped at the band edges instead
  * of wrapping. Both were flagged as wrong by real end-user feedback ("not
- * how most avionics behave").
+ * how most avionics behave"). Exported so rmp-panel.js's tuning knob (which
+ * drives the same COM1/COM2 standby datarefs, just from a different panel)
+ * doesn't need to reproduce the 8.33kHz grid logic a second time.
  */
-function nextStandbyRaw(band, current, mode, dir) {
+export function nextStandbyRaw(band, current, mode, dir) {
   const step = STEP[band];
   if (!step) return current;
   const coarseUnit = step.coarse;

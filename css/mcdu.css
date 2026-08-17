@@ -196,9 +196,17 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
    .panel-content class: MCDU's own layout already sizes itself off its
    content and isn't part of this, so it shouldn't start stretching too. */
 #panel-efis,
-#panel-fcu {
+#panel-fcu,
+#panel-rmp {
   flex: 1;
   min-height: 0;
+}
+/* .panel-content's own 12px gap (below) was sized for MCDU's screen/keypad
+   spacing — harmless for #panel-efis/#panel-fcu since they only have one
+   child each, but #panel-rmp stacks two real panels (<rmp-panel>/
+   <acp-panel>) that should sit flush against each other, not MCDU-spaced. */
+#panel-rmp {
+  gap: 0;
 }
 
 /* Fills the remaining vertical space in .panel-content (a flex column)

@@ -6,6 +6,7 @@ import { EfisAdapter } from "./efis-adapter.js";
 import { wireEfisPanel, blankEfisPanel } from "./efis-panel.js";
 import { wireFcuPanel, blankFcuPanel } from "./fcu-panel.js";
 import { wireRadioPanel, blankRadioPanel } from "./radio-panel.js";
+import { wireRmpAcpPanel, blankRmpAcpPanel } from "./rmp-panel.js";
 import { setupAutoscale } from "./panel-autoscale.js";
 import { startWakeLock, stopWakeLock } from "./wake-lock.js";
 
@@ -16,6 +17,8 @@ import { startWakeLock, stopWakeLock } from "./wake-lock.js";
 const FCU_NATIVE_SIZE = { width: 1266, height: 442 };
 const EFIS_NATIVE_SIZE = { width: 720, height: 370 };
 const RADIO_NATIVE_SIZE = { width: 1112, height: 500 };
+const RMP_NATIVE_SIZE = { width: 872, height: 452 };
+const ACP_NATIVE_SIZE = { width: 872, height: 428 };
 
 const STORAGE_KEY = "mcdu.connection";
 const THEME_KEY = "mcdu.theme";
@@ -42,6 +45,13 @@ const AIRCRAFT_EFIS_PROFILES = {
 };
 const AIRCRAFT_FCU_PROFILES = {
   a333: "./config/profiles/fcu-a333.json",
+};
+// RMP+ACP is stock-A330-specific (laminar/A333/rtp_L/... + .../audio/capt/...
+// — see config/profiles/rmp-acp-a333.json's own description), so it's gated
+// the same way as EFIS/FCU rather than being aircraft-generic like the radio
+// panel below.
+const AIRCRAFT_RMP_PROFILES = {
+  a333: "./config/profiles/rmp-acp-a333.json",
 };
 
 // Unlike EFIS/FCU, the radio panel lives under X-Plane's own generic
@@ -73,6 +83,7 @@ const els = {
   panelEfis: document.getElementById("panel-efis"),
   panelFcu: document.getElementById("panel-fcu"),
   panelRadio: document.getElementById("panel-radio"),
+  panelRmp: document.getElementById("panel-rmp"),
 };
 
 // Reconnecting swaps in new adapters/keypad bound to a new client, and
@@ -105,6 +116,7 @@ restoreAircraft();
 blankFcuPanel();
 blankEfisPanel();
 blankRadioPanel();
+blankRmpAcpPanel();
 
 setupAutoscale(els.autoscaleToggle, [
   {
@@ -124,6 +136,18 @@ setupAutoscale(els.autoscaleToggle, [
     panelEl: els.panelRadio.querySelector("radio-panel"),
     nativeWidth: RADIO_NATIVE_SIZE.width,
     nativeHeight: RADIO_NATIVE_SIZE.height,
+  },
+  {
+    container: els.panelRmp.querySelectorAll(".scalable-panel")[0],
+    panelEl: els.panelRmp.querySelector("rmp-panel"),
+    nativeWidth: RMP_NATIVE_SIZE.width,
+    nativeHeight: RMP_NATIVE_SIZE.height,
+  },
+  {
+    container: els.panelRmp.querySelectorAll(".scalable-panel")[1],
+    panelEl: els.panelRmp.querySelector("acp-panel"),
+    nativeWidth: ACP_NATIVE_SIZE.width,
+    nativeHeight: ACP_NATIVE_SIZE.height,
   },
 ]);
 
@@ -220,10 +244,12 @@ function applyAircraftAvailability() {
   const hasMcdu = Boolean(AIRCRAFT_MCDU_PROFILES[aircraft]);
   const hasEfis = Boolean(AIRCRAFT_EFIS_PROFILES[aircraft]);
   const hasFcu = Boolean(AIRCRAFT_FCU_PROFILES[aircraft]);
+  const hasRmp = Boolean(AIRCRAFT_RMP_PROFILES[aircraft]);
   for (const opt of els.panelSelect.options) {
     if (opt.value === "mcdu") opt.disabled = !hasMcdu;
     if (opt.value === "efis") opt.disabled = !hasEfis;
     if (opt.value === "fcu") opt.disabled = !hasFcu;
+    if (opt.value === "rmp") opt.disabled = !hasRmp;
   }
   // The radio panel (never disabled) is always a safe fallback once the
   // currently selected panel option becomes unavailable for this aircraft.
@@ -240,6 +266,7 @@ function showPanel(panel) {
   els.panelEfis.hidden = panel !== "efis";
   els.panelFcu.hidden = panel !== "fcu";
   els.panelRadio.hidden = panel !== "radio";
+  els.panelRmp.hidden = panel !== "rmp";
 
   // The physical-keyboard bindings only make sense while the MCDU panel is
   // the one actually on screen — otherwise typing while looking at EFIS
@@ -316,11 +343,13 @@ async function connect() {
   const mcduProfilePath = AIRCRAFT_MCDU_PROFILES[aircraft];
   const efisProfilePath = AIRCRAFT_EFIS_PROFILES[aircraft];
   const fcuProfilePath = AIRCRAFT_FCU_PROFILES[aircraft];
-  const [mcduProfile, efisProfile, fcuProfile, radioProfile] = await Promise.all([
+  const rmpProfilePath = AIRCRAFT_RMP_PROFILES[aircraft];
+  const [mcduProfile, efisProfile, fcuProfile, radioProfile, rmpProfile] = await Promise.all([
     mcduProfilePath ? fetch(mcduProfilePath).then((r) => r.json()) : null,
     efisProfilePath ? fetch(efisProfilePath).then((r) => r.json()) : null,
     fcuProfilePath ? fetch(fcuProfilePath).then((r) => r.json()) : null,
     fetch(RADIO_PROFILE_PATH).then((r) => r.json()),
+    rmpProfilePath ? fetch(rmpProfilePath).then((r) => r.json()) : null,
   ]);
 
   // No MCDU profile for "generic" — see AIRCRAFT_MCDU_PROFILES above. The
@@ -372,6 +401,13 @@ async function connect() {
   await radioAdapter.connect();
   wireRadioPanel(radioAdapter);
 
+  let rmpAdapter = null;
+  if (rmpProfile) {
+    rmpAdapter = new EfisAdapter(client, rmpProfile);
+    await rmpAdapter.connect();
+    await wireRmpAcpPanel(rmpAdapter);
+  }
+
   // Re-applies keyboard-input attachment for whichever panel is currently
   // selected, now that mcduKeypad actually exists.
   showPanel(els.panelSelect.value);
@@ -380,7 +416,8 @@ async function connect() {
     (mcduAdapter?.unresolvedKeys.size ?? 0) +
     (efisAdapter?.unresolved.size ?? 0) +
     (fcuAdapter?.unresolved.size ?? 0) +
-    radioAdapter.unresolved.size;
+    radioAdapter.unresolved.size +
+    (rmpAdapter?.unresolved.size ?? 0);
   if (unresolvedCount > 0) {
     setStatus("open", `connected, but ${unresolvedCount} item(s) didn't resolve — see console`);
   } else {

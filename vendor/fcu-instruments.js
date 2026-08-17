@@ -841,12 +841,11 @@
          index, for a knob face whose labels are laid out running the
          opposite rotational sense from the default (e.g. EFIS's ND
          mode/range, whose label positions match a real Airbus hardware
-         photo and can't just be moved to match — see vendor/README.md's
-         fcu-instruments.js entry). Default false leaves every existing
-         caller (the round <fcu-knob>'s own wheel handling, and any other
-         <fcu-selector-knob> like the radio panel's band selector)
-         unchanged, so "up = clockwise" stays true panel-to-panel even
-         though the two knob faces sweep their labels in opposite
+         photo and can't just be moved to match). Default false leaves
+         every existing caller (the round <fcu-knob>'s own wheel handling,
+         and any other <fcu-selector-knob> like the radio panel's band
+         selector) unchanged, so "up = clockwise" stays true panel-to-panel
+         even though the two knob faces sweep their labels in opposite
          directions. */
       var invert = flag(this, 'drag-invert', false);
 
@@ -987,9 +986,15 @@
         'background:linear-gradient(180deg,#2b3338 0%,#12181b 55%,#080c0e 100%);box-shadow:' + up + ';' +
         'cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation');
 
+      /* led="none": legend-only Airbus pushbutton (RMP / ACP style). The LED slot
+         stays in the layout but invisible, so the legend sits at the same height
+         as on a button that has one. */
+      var noLed = this.getAttribute('led') === 'none';
       var bar = '<i style="display:block;width:100%;height:3px;border-radius:1px;background:' + dim(this.ledColor) + '"></i>';
       this.innerHTML =
-        '<span data-led="' + id + '" style="pointer-events:none;width:' + Math.round(w * 52 / 92) + 'px;height:11px;' +
+        '<span ' + (noLed ? '' : 'data-led="' + id + '" ') +
+          'style="pointer-events:none;width:' + Math.round(w * 52 / 92) + 'px;height:11px;' +
+          (noLed ? 'visibility:hidden;' : '') +
           'display:flex;flex-direction:column;justify-content:space-between">' + bar + bar + bar + '</span>' +
         '<span data-label style="pointer-events:none;font-size:14px;font-weight:700;letter-spacing:1px;' +
           'white-space:nowrap;user-select:none"></span>';
@@ -1031,6 +1036,7 @@
 
     _paint(on) {
       this.lit = on;
+      if (!this._led) return;
       var c = this.ledColor;
       this._led.querySelectorAll('i').forEach(function (b) {
         b.style.background = on ? c : dim(c);

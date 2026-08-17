@@ -144,3 +144,37 @@ Standby tuning (COM/NAV/DME/ADF1/ADF2) writes the standby-frequency dataref
 directly rather than firing step commands — see `src/radio-panel.js`'s own
 top comment for why. The `stby_*_coarse/fine_up/down` step commands aren't
 listed above since nothing in the app fires them anymore.
+
+---
+
+## RMP+ACP (`rmp-acp-a333.json`, Airbus A330 only)
+
+Stock/default A330's own RTP (X-Plane's name for the real-hardware RMP) and
+ACP, Captain's side only, VHF1/VHF2 scoped for now — see the profile's own
+`description`/`_note_on_*` fields for the fuller reasoning. Under
+`laminar/A333/rtp_L/...` and `laminar/A333/audio/capt/...`, a completely
+separate namespace from ToLiss's `AirbusFBW/RMP{1,2,3}` (different aircraft,
+different implementation of the same real-world concept).
+
+### Datarefs
+
+- `laminar/A333/comm/rtp_L/vhf_1_status`, `vhf_2_status` (two independent booleans, not a shared enum, confirmed live)
+- `laminar/A333/comm/rtp_L/off_status` (1 = off, 0 = on, confirmed live)
+- `laminar/A333/audio/capt/mic_status1`, `mic_status2` (confirmed live mutually exclusive)
+- `sim/cockpit2/radios/actuators/com{1,2}_frequency_hz_833`, `com{1,2}_standby_frequency_hz_833` (same datarefs the generic radio panel already uses — see `_note_on_tuning`)
+- `laminar/A333/audio/capt/volume_pos_0`, `volume_pos_1` (read fine; writing a fractional value fails live with an X-Plane-side "incompatible_data" error — see the profile's own `_gap_acp_volume_write`)
+- `laminar/A333/audio/capt/listen_status` (16-element array, confirmed live index 0 = VHF1/index 1 = VHF2, plain 0/1 — resolved/subscribed directly in `src/rmp-panel.js`, not through the profile, since EfisAdapter's button model doesn't support one shared array dataref with a per-button index)
+
+### Commands
+
+- `laminar/A333/rtp_L/vhf_1/sel_switch`, `vhf_2/sel_switch` (channel select)
+- `laminar/A333/rtp_L/freq_txfr/sel_switch` (active/standby transfer)
+- `laminar/A333/rtp_L/off_switch` (power toggle, confirmed live)
+- `laminar/A333/audio/capt/mic_push1`, `mic_push2` (transmit select)
+- `laminar/A333/audio/capt/listen_press00`, `listen_press01` (listen toggle — index 0/1 one-to-one, confirmed live)
+
+The RTP's own `freq_khz`/`freq_MHz` `sel_dial_up`/`_dn` step commands are
+resolved but not used — tuning reuses the generic radio panel's direct
+standby-dataref write instead, see `_note_on_tuning`. Not yet wired at all:
+VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the ACP's INT/CAB/PA/
+nav-reception rows.

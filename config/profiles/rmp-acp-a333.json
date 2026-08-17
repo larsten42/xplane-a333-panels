@@ -1,0 +1,96 @@
+{
+  "id": "a333-rmp-acp",
+  "aircraft": "Airbus A330 (stock/default)",
+  "label": "Stock A330 RMP (RTP) + ACP — VHF1/VHF2 only",
+  "description": "Dataref/command mapping for the stock/default Airbus A330's RTP (laminar/A333/rtp_L/... — X-Plane's own name for what real Airbus hardware calls the RMP) and ACP (laminar/A333/audio/capt/...), Captain's side only. Confirmed live 2026-08-16 against a running X-Plane 12 with the stock a333 loaded. Scoped to VHF1/VHF2 (COM1/COM2) for now, matching the first integration pass of the vendor/rmp.js delivery — VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP and the ACP's INT/CAB/PA/nav-reception rows are all real controls on the panel that just aren't wired to anything yet.",
+
+  "_note_on_tuning": "The RTP's own freq_khz/freq_MHz sel_dial_up/dn step commands are NOT used here. Confirmed live 2026-08-16: selecting VHF2 on the RTP and then turning its tune knob changes sim/cockpit2/radios/actuators/com2_standby_frequency_hz_833 (not a separate RTP-owned frequency store) — the RTP is a routing layer over the exact same standby datarefs radio-panel-generic.json already writes directly. So each channel's tune knob input here reuses that readout's own encoder.writeDataref (same optimistic-write pattern as the generic radio panel), keyed by whichever channel the RTP's channel-select buttons report as active. src/rmp-panel.js also ports the Radio panel's whole coarse/fine tuning behaviour wholesale rather than reimplementing it: the same grab-near-center(fine)/grab-near-edge(coarse) ring-pick gesture vendor/radio.js implements on top of its own plain, ring-less <fcu-knob> (this delivery's rmp-tune knob is the same kind of plain knob, so it needs the same gesture bolted on), and the exact same nextStandbyRaw() from radio-panel.js for the real 8.33kHz-grid fine stepping and coarse-ring wraparound at the band edges.",
+  "_note_on_channel_select": "vhf_1_status/vhf_2_status are two independent boolean datarefs (not one shared enum) -- confirmed live selecting VHF2 sets vhf_2_status and clears vhf_1_status.",
+  "_note_on_power": "off_status: confirmed live 1 = powered off, 0 = powered on -- modeled with invert so isLit(RTP_POWER) reads true when the unit is actually on.",
+  "_note_on_acp": "mic_status1/mic_status2 confirmed live mutually exclusive (X-Plane itself enforces only one transmit-select at a time, same shape as the ToLiss/generic radio panel's own transmit selector).",
+  "_gap_acp_volume_write": "volume_pos_0/volume_pos_1 read fine (plain 0.0-1.0 doubles), but WRITING a fractional value to them fails live 2026-08-16 with X-Plane's own 'incompatible_data ... sent an array to write to a non-array dataref' error, over both the REST PATCH and websocket dataref_set_values paths -- despite /datarefs metadata reporting is_writable:true and value_type:double (not array), and a websocket dataref_subscribe_values read confirming a plain scalar comes back, not an array. Isolated live: writing a whole-number value (e.g. 1) to this same dataref/id succeeds; writing any fractional value (e.g. 0.33) fails identically whether sent as a JSON number or a JSON string. A known-good float-type dataref (sim/cockpit/misc/barometer_setting) accepts fractional writes fine on this same X-Plane 12.4.3 install, so this looks like an X-Plane Web API bug specific to double-typed dataref writes rather than anything on this app's side -- the volume readouts/knobs below are still wired (the write is harmless if it fails, just a console warning) in case a future X-Plane patch fixes it, but reception volume won't actually move the sim's volume today.",
+  "_note_on_listen_toggle": "The ACP's per-channel reception 'listen' toggle (whether you can hear a radio, as opposed to whether you can transmit on it) lives on laminar/A333/audio/capt/listen_status, confirmed live to be a 16-element array dataref (index 0 = VHF1, index 1 = VHF2, plain 0/1 values), toggled via listen_press00 (index 0) / listen_press01 (index 1) -- listen_pos mirrors listen_status exactly in this profile's own live testing, status is the one used. This doesn't fit EfisAdapter's button model (one stateDataref per button, not one shared array with a per-button index), so it's resolved and subscribed directly against the adapter's own client in src/rmp-panel.js rather than listed as a button/readout here. Tapping the ACP knob (as opposed to dragging it, which is the volume control) fires the toggle -- needed a small hand-patch to vendor/rmp.js's <acp-knob> to add an onTap() hook, since it only shipped with a self-contained tap-toggles-its-own-lamp gesture -- see vendor/README.md.",
+  "_note_on_encoder_stepValue": "All four encoder.stepValue fields below are deliberately 1, not the bands' real per-detent step sizes (COM fine=5/coarse=1000, volume's 0-1 granularity) -- EfisAdapter.adjustReadoutValue(name, deltaSteps) always computes next = current + deltaSteps*stepValue, and src/rmp-panel.js already computes and passes the *fully real* delta itself (via radio-panel.js's nextStandbyRaw() for tuning, a plain target-current subtraction for volume), so stepValue here only needs to be a no-op multiplier -- exactly the same convention radio-panel-generic.json already uses for the same reason. Setting this to a real step size double-applies it (confirmed live 2026-08-16: stepValue 5 turned a 1000 coarse step into 5000, and a 5 fine step into 25, which is what 'the MHz digit goes crazy and the kHz still rolls over' actually was).",
+
+  "readouts": [
+    {
+      "name": "COM1",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/com1_frequency_hz_833",
+        "standby": "sim/cockpit2/radios/actuators/com1_standby_frequency_hz_833"
+      },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/com1_standby_frequency_hz_833",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "COM2",
+      "format": "raw",
+      "datarefs": {
+        "active": "sim/cockpit2/radios/actuators/com2_frequency_hz_833",
+        "standby": "sim/cockpit2/radios/actuators/com2_standby_frequency_hz_833"
+      },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/com2_standby_frequency_hz_833",
+        "valueKey": "standby",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "VOL_VHF1",
+      "format": "raw",
+      "datarefs": { "value": "laminar/A333/audio/capt/volume_pos_0" },
+      "encoder": {
+        "writeDataref": "laminar/A333/audio/capt/volume_pos_0",
+        "valueKey": "value",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "VOL_VHF2",
+      "format": "raw",
+      "datarefs": { "value": "laminar/A333/audio/capt/volume_pos_1" },
+      "encoder": {
+        "writeDataref": "laminar/A333/audio/capt/volume_pos_1",
+        "valueKey": "value",
+        "stepValue": 1
+      }
+    }
+  ],
+
+  "buttons": [
+    {
+      "name": "SEL_VHF1",
+      "command": "laminar/A333/rtp_L/vhf_1/sel_switch",
+      "stateDataref": "laminar/A333/comm/rtp_L/vhf_1_status"
+    },
+    {
+      "name": "SEL_VHF2",
+      "command": "laminar/A333/rtp_L/vhf_2/sel_switch",
+      "stateDataref": "laminar/A333/comm/rtp_L/vhf_2_status"
+    },
+    {
+      "name": "RTP_XFER",
+      "command": "laminar/A333/rtp_L/freq_txfr/sel_switch"
+    },
+    {
+      "name": "RTP_POWER",
+      "command": "laminar/A333/rtp_L/off_switch",
+      "stateDataref": "laminar/A333/comm/rtp_L/off_status",
+      "invert": true
+    },
+    {
+      "name": "MIC_VHF1",
+      "command": "laminar/A333/audio/capt/mic_push1",
+      "stateDataref": "laminar/A333/audio/capt/mic_status1"
+    },
+    {
+      "name": "MIC_VHF2",
+      "command": "laminar/A333/audio/capt/mic_push2",
+      "stateDataref": "laminar/A333/audio/capt/mic_status2"
+    }
+  ]
+}
