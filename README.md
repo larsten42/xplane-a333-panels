@@ -33,6 +33,9 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
 <tr>
 <td align="center" colspan="2"><img src="docs/screenshots/screenshot_radio.jpg" alt="Radio panel with live COM/NAV/ADF/DME data from a connected X-Plane"><br>Radio</td>
 </tr>
+<tr>
+<td align="center" colspan="2"><img src="docs/screenshots/screenshot_rmp_acp.jpg" alt="RMP+ACP panel with live VHF1/VHF2 data from a connected X-Plane"><br>RMP+ACP</td>
+</tr>
 </table>
 
 ## Status & scope

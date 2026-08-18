@@ -216,12 +216,25 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
    measured size vs. the panel's native pixel size. min-height:0 is load
    -bearing: without it, a flex child can't shrink below its content size,
    so it would just push the container taller instead of ever leaving room
-   to scale down. */
+   to scale down.
+
+   align-items is flex-start (top), not center: this container's own
+   height is whatever's left in the viewport, which is usually taller than
+   the scaled panel actually needs once it's width-constrained (a wide
+   panel in a narrower-than-wide window) — centering split that leftover
+   space above and below, showing up as a large, confusing gap *above* the
+   panel. flex-start pushes all of that leftover space below instead,
+   right where "there's just some empty room under the panel" reads as
+   normal rather than "why is there a gap before it even starts". Same
+   fix for #panel-rmp's two stacked halves (RMP/ACP each still flush to
+   the top of their own half, not floating in its middle). Horizontal
+   centering (justify-content) is unaffected — no complaints about
+   left/right padding, only top. */
 .scalable-panel {
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   overflow: hidden;
   /* Without this, a touch that lands a few pixels off a knob/lever's own
@@ -233,8 +246,16 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
      container, and its own small screens may still need to scroll). */
   touch-action: none;
 }
+/* top center, not center center: align-items:flex-start above only pins
+   the *unscaled* box's top edge to the container's top — transform:scale()
+   then shrinks around whatever transform-origin says, so a center origin
+   would still pull the top edge back down toward the middle as it shrinks,
+   undoing the flex-start alignment. Shrinking from the top keeps the top
+   edge fixed while staying horizontally centered (justify-content:center
+   already centers the unscaled box, and shrinking symmetrically left/right
+   from top-center preserves that after the transform). */
 .scalable-panel > * {
-  transform-origin: center center;
+  transform-origin: top center;
 }
 @media (prefers-reduced-motion: no-preference) {
   .scalable-panel > * {
