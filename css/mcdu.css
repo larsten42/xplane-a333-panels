@@ -183,6 +183,101 @@ body[data-panel="mcdu"] .autoscale-toggle {
 }
 body.bar-hidden .connection-bar { display: none; }
 
+/* Floating "map" of RMP+ACP's two stacked halves (src/rmp-minimap.js) —
+   only meaningful there, so it's hidden/shown directly via the `hidden`
+   attribute from app.js's showPanel() rather than a body[data-panel] CSS
+   rule (simpler than adding yet another one of those for a single
+   element). Sits directly under the three toggle buttons above (which
+   stop at 24px + 6px top = 30px), same right edge, deliberately larger
+   than them — this is a real touch target for tapping/dragging on a
+   phone, not another small icon button. Fixed position and outside
+   .connection-bar for the same reason those three are: it needs to stay
+   reachable even with the bar hidden (see .bar-toggle's own comment). */
+.rmp-minimap {
+  position: fixed;
+  top: 36px;
+  right: 6px;
+  z-index: 10;
+  width: 56px;
+  height: 128px;
+  border: 1px solid var(--bar-border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Dragging on the map scrolls the panel stack itself (src/rmp-minimap.js
+     sets #panel-rmp's scrollTop directly) — without this, a drag that
+     starts here would also try to pan/scroll the map element's own box
+     under the browser's native touch handling, fighting the JS-driven
+     scroll and making the drag feel jittery. */
+  touch-action: none;
+}
+/* Same specificity-tie reasoning as .panel-content[hidden] above — a
+   `display` this file declares on the bare class always wins the tie
+   against the [hidden] UA-stylesheet rule, so it has to be undone
+   explicitly rather than trusting the attribute alone. */
+.rmp-minimap[hidden] {
+  display: none;
+}
+.rmp-minimap-section {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--bar-text-muted);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.rmp-minimap-section + .rmp-minimap-section {
+  border-top: 1px solid var(--bar-border);
+}
+/* The section currently shown reads brighter than the muted default so
+   "which half am I looking at" is legible at a glance; the hidden one
+   dims further rather than disappearing outright, since it's still a
+   live toggle target, not a removed option. */
+.rmp-minimap-section.visible {
+  color: var(--key-text);
+}
+.rmp-minimap-section.hidden {
+  color: #4a4d52;
+}
+.rmp-minimap-section:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+/* Brief acknowledgement when a tap tried to hide the only section still
+   visible (src/rmp-minimap.js refuses that rather than leaving nothing
+   shown) — a quick color flash so the tap still visibly registered
+   instead of just silently doing nothing. */
+@keyframes rmp-minimap-locked-pulse {
+  0%, 100% { color: var(--key-text); }
+  50% { color: var(--c-amber); }
+}
+.rmp-minimap-section.locked-pulse {
+  animation: rmp-minimap-locked-pulse 0.4s ease;
+}
+/* Highlights whichever slice of the stack is actually scrolled into view
+   right now — plain position:absolute within .rmp-minimap, top/height
+   recomputed on every scroll (src/rmp-minimap.js), spanning the full map
+   height whenever there's nothing to scroll (both halves already fit).
+   pointer-events:none so it never steals the drag/tap this map exists
+   for. */
+.rmp-minimap-viewport {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: rgba(55, 201, 230, 0.14);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 /* CDU position and Key style only mean anything for the MCDU panel — see
    app.js's showPanel(), which sets body[data-panel]. */
 body[data-panel="efis"] .mcdu-only-control,
@@ -207,6 +302,15 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
    <acp-panel>) that should sit flush against each other, not MCDU-spaced. */
 #panel-rmp {
   gap: 0;
+  /* .scalable-panel--stack below sizes each half to its own scaled
+     content instead of splitting this container's height in two, so the
+     stack's real total height can exceed what's actually available (a
+     narrow/tall viewport, e.g. a phone in portrait — the case this is
+     for) — this is what lets it scroll instead of silently clipping.
+     min-height:0 above is what lets this shrink below content size in
+     the first place; without it a flex child can't be shorter than its
+     content, and scrolling would never even become necessary. */
+  overflow-y: auto;
 }
 
 /* Fills the remaining vertical space in .panel-content (a flex column)
@@ -245,6 +349,30 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
      nothing legitimate to pan here; MCDU isn't touched by this (separate
      container, and its own small screens may still need to scroll). */
   touch-action: none;
+}
+/* Same specificity-tie reasoning as .panel-content[hidden]/.rmp-minimap[hidden]
+   above — src/rmp-minimap.js hides a stack half by setting its wrapper's
+   `hidden` attribute, but an author rule always wins a specificity tie
+   against the browser's own [hidden]{display:none}, so the bare class's
+   display:flex above would otherwise keep it showing regardless. */
+.scalable-panel[hidden] {
+  display: none;
+}
+/* RMP+ACP's two halves (src/rmp-panel.js/index.html) opt into this instead
+   of the default flex:1 "claim an equal fixed share of the container"
+   behavior above — see panel-autoscale.js's "content" mode, which sizes
+   these explicitly (inline width/height) to each panel's own real scaled
+   footprint. Two panels sharing one container don't have an "equal share"
+   that means anything (their content isn't interchangeable), and fighting
+   over a fixed split just shrinks both to whatever the shorter one needs
+   — flex:0 0 auto instead lets each be exactly as tall as its own content,
+   stack naturally, and (see #panel-rmp's overflow-y:auto) scroll as a
+   group if that's taller than the viewport. align-self:center keeps it
+   horizontally centered in #panel-rmp's cross axis now that it isn't
+   stretched to fill it. */
+.scalable-panel--stack {
+  flex: 0 0 auto;
+  align-self: center;
 }
 /* top center, not center center: align-items:flex-start above only pins
    the *unscaled* box's top edge to the container's top — transform:scale()

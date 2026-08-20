@@ -122,14 +122,25 @@
        side only, VHF1/VHF2 for now — see src/rmp-panel.js and
        config/profiles/rmp-acp-a333.json. Two stacked scalable-panel
        wrappers rather than one shared one, since panel-autoscale.js scales
-       one fixed-size vendored element per container. -->
+       one fixed-size vendored element per container. scalable-panel--stack
+       (see css/mcdu.css) sizes each to its own scaled content instead of
+       an equal fixed share, and lets #panel-rmp scroll if that's taller
+       than the viewport — src/rmp-minimap.js is the floating control for
+       that scrolling plus toggling either half's visibility, useful on a
+       narrow/tall screen where both at once don't leave much room. -->
   <div id="panel-rmp" class="panel-content" hidden>
-    <div class="scalable-panel">
+    <div class="scalable-panel scalable-panel--stack" data-rmp-wrapper="rmp">
       <rmp-panel></rmp-panel>
     </div>
-    <div class="scalable-panel">
+    <div class="scalable-panel scalable-panel--stack" data-rmp-wrapper="acp">
       <acp-panel></acp-panel>
     </div>
+  </div>
+
+  <div id="rmp-minimap" class="rmp-minimap" hidden title="Show/hide RMP or ACP — drag to scroll">
+    <div class="rmp-minimap-section" data-map-section="rmp">RMP</div>
+    <div class="rmp-minimap-section" data-map-section="acp">ACP</div>
+    <div class="rmp-minimap-viewport" data-map-viewport></div>
   </div>
 
   <script type="module" src="./src/app.js"></script>

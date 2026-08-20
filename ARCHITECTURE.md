@@ -357,6 +357,21 @@ full reasoning and what's still unwired.
   `<acp-knob>` (an `onTap()` hook — see `vendor/README.md`'s `rmp.js`
   entry) since the delivered component only had a self-contained
   tap-toggles-its-own-lamp gesture with nothing to intercept.
+- **Minimap** (`src/rmp-minimap.js`, small floating widget under the FIT/
+  full-screen buttons): for a narrow/tall viewport (a phone in portrait)
+  where the RMP and ACP halves don't both comfortably fit at a readable
+  size. Tapping a section shows/hides that half (at least one always
+  stays visible — hiding the last one is refused, with a brief color
+  pulse so the tap still visibly registers); dragging anywhere on the map
+  scrolls the stack, mapping the drag position directly to a scroll
+  position rather than a relative pan. This is also *why* RMP+ACP's two
+  halves size differently from every other autoscaled panel: each is
+  fit to *width* only and sized to its own scaled result (`panel-
+  autoscale.js`'s "content" mode, `.scalable-panel--stack` in
+  css/mcdu.css) instead of being forced to share a fixed half of the
+  container — an equal split doesn't mean anything once either half can
+  be hidden, and `#panel-rmp` scrolls (`overflow-y: auto`) instead of
+  clipping when the stack is taller than the viewport.
 - **Not wired yet**: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the
   ACP's INT/CAB/PA/nav-reception rows.
 
@@ -532,6 +547,7 @@ src/
   fcu-panel.js                         wires an EfisAdapter to vendor/fcu-instruments.js's <fcu-panel>
   radio-panel.js                        wires an EfisAdapter to vendor/radio.js's <radio-panel>
   rmp-panel.js                           wires an EfisAdapter to vendor/rmp.js's <rmp-panel>/<acp-panel>
+  rmp-minimap.js                          floating widget to show/hide/scroll RMP+ACP's two stacked halves on a small screen
   readout-formats.js                   per-readout display-text formatting (QNH, mode/range labels, FCU windows)
   panel-autoscale.js                   fits <efis-panel>/<fcu-panel>/<radio-panel>/<rmp-panel>/<acp-panel> to their container via a computed CSS transform
   console.js                           polls/renders the operator console — no X-Plane/adapter concepts at all

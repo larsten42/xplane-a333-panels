@@ -8,6 +8,7 @@ import { wireFcuPanel, blankFcuPanel } from "./fcu-panel.js";
 import { wireRadioPanel, blankRadioPanel } from "./radio-panel.js";
 import { wireRmpAcpPanel, blankRmpAcpPanel } from "./rmp-panel.js";
 import { setupAutoscale } from "./panel-autoscale.js";
+import { setupRmpMinimap } from "./rmp-minimap.js";
 import { startWakeLock, stopWakeLock } from "./wake-lock.js";
 
 // <fcu-panel>/<efis-panel>/<radio-panel>'s native, unscaled pixel size —
@@ -84,6 +85,7 @@ const els = {
   panelFcu: document.getElementById("panel-fcu"),
   panelRadio: document.getElementById("panel-radio"),
   panelRmp: document.getElementById("panel-rmp"),
+  rmpMinimap: document.getElementById("rmp-minimap"),
 };
 
 // Reconnecting swaps in new adapters/keypad bound to a new client, and
@@ -118,7 +120,7 @@ blankEfisPanel();
 blankRadioPanel();
 blankRmpAcpPanel();
 
-setupAutoscale(els.autoscaleToggle, [
+const refreshAutoscale = setupAutoscale(els.autoscaleToggle, [
   {
     container: els.panelFcu.querySelector(".scalable-panel"),
     panelEl: els.panelFcu.querySelector("fcu-panel"),
@@ -138,18 +140,32 @@ setupAutoscale(els.autoscaleToggle, [
     nativeHeight: RADIO_NATIVE_SIZE.height,
   },
   {
-    container: els.panelRmp.querySelectorAll(".scalable-panel")[0],
+    container: els.panelRmp.querySelector('[data-rmp-wrapper="rmp"]'),
     panelEl: els.panelRmp.querySelector("rmp-panel"),
     nativeWidth: RMP_NATIVE_SIZE.width,
     nativeHeight: RMP_NATIVE_SIZE.height,
+    mode: "content",
+    widthSource: els.panelRmp,
   },
   {
-    container: els.panelRmp.querySelectorAll(".scalable-panel")[1],
+    container: els.panelRmp.querySelector('[data-rmp-wrapper="acp"]'),
     panelEl: els.panelRmp.querySelector("acp-panel"),
     nativeWidth: ACP_NATIVE_SIZE.width,
     nativeHeight: ACP_NATIVE_SIZE.height,
+    mode: "content",
+    widthSource: els.panelRmp,
   },
 ]);
+
+setupRmpMinimap(
+  els.rmpMinimap,
+  els.panelRmp,
+  [
+    { key: "rmp", wrapper: els.panelRmp.querySelector('[data-rmp-wrapper="rmp"]'), sectionEl: els.rmpMinimap.querySelector('[data-map-section="rmp"]') },
+    { key: "acp", wrapper: els.panelRmp.querySelector('[data-rmp-wrapper="acp"]'), sectionEl: els.rmpMinimap.querySelector('[data-map-section="acp"]') },
+  ],
+  refreshAutoscale
+);
 
 // Full-screen-friendly: hides the panel/CDU/key-style/connect controls
 // once you're actually set up and flying. The toggle button itself is
@@ -267,6 +283,7 @@ function showPanel(panel) {
   els.panelFcu.hidden = panel !== "fcu";
   els.panelRadio.hidden = panel !== "radio";
   els.panelRmp.hidden = panel !== "rmp";
+  els.rmpMinimap.hidden = panel !== "rmp";
 
   // The physical-keyboard bindings only make sense while the MCDU panel is
   // the one actually on screen — otherwise typing while looking at EFIS

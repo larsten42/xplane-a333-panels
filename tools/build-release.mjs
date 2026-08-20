@@ -46,6 +46,7 @@ const INCLUDE = [
   "src/fcu-panel.js",
   "src/radio-panel.js",
   "src/rmp-panel.js",
+  "src/rmp-minimap.js",
   "src/readout-formats.js",
   "src/panel-autoscale.js",
   "src/wake-lock.js",
