@@ -9,7 +9,7 @@
   "_note_on_power": "off_status: confirmed live 1 = powered off, 0 = powered on -- modeled with invert so isLit(RTP_POWER) reads true when the unit is actually on.",
   "_note_on_acp": "mic_status1/mic_status2 confirmed live mutually exclusive (X-Plane itself enforces only one transmit-select at a time, same shape as the ToLiss/generic radio panel's own transmit selector).",
   "_gap_acp_volume_write": "volume_pos_0/volume_pos_1 read fine (plain 0.0-1.0 doubles), but WRITING a fractional value to them fails live 2026-08-16 with X-Plane's own 'incompatible_data ... sent an array to write to a non-array dataref' error, over both the REST PATCH and websocket dataref_set_values paths -- despite /datarefs metadata reporting is_writable:true and value_type:double (not array), and a websocket dataref_subscribe_values read confirming a plain scalar comes back, not an array. Isolated live: writing a whole-number value (e.g. 1) to this same dataref/id succeeds; writing any fractional value (e.g. 0.33) fails identically whether sent as a JSON number or a JSON string. A known-good float-type dataref (sim/cockpit/misc/barometer_setting) accepts fractional writes fine on this same X-Plane 12.4.3 install, so this looks like an X-Plane Web API bug specific to double-typed dataref writes rather than anything on this app's side -- the volume readouts/knobs below are still wired (the write is harmless if it fails, just a console warning) in case a future X-Plane patch fixes it, but reception volume won't actually move the sim's volume today.",
-  "_note_on_listen_toggle": "The ACP's per-channel reception 'listen' toggle (whether you can hear a radio, as opposed to whether you can transmit on it) lives on laminar/A333/audio/capt/listen_status, confirmed live to be a 16-element array dataref (index 0 = VHF1, index 1 = VHF2, plain 0/1 values), toggled via listen_press00 (index 0) / listen_press01 (index 1) -- listen_pos mirrors listen_status exactly in this profile's own live testing, status is the one used. This doesn't fit EfisAdapter's button model (one stateDataref per button, not one shared array with a per-button index), so it's resolved and subscribed directly against the adapter's own client in src/rmp-panel.js rather than listed as a button/readout here. Tapping the ACP knob (as opposed to dragging it, which is the volume control) fires the toggle -- needed a small hand-patch to vendor/rmp.js's <acp-knob> to add an onTap() hook, since it only shipped with a self-contained tap-toggles-its-own-lamp gesture -- see vendor/README.md.",
+  "_note_on_listen_toggle": "The ACP's per-channel reception 'listen' toggle (whether you can hear a radio, as opposed to whether you can transmit on it) lives on laminar/A333/audio/capt/listen_status, confirmed live to be a 16-element array dataref (index 0 = VHF1, index 1 = VHF2, plain 0/1 values), toggled via listen_press00 (index 0) / listen_press01 (index 1) -- listen_pos mirrors listen_status exactly in this profile's own live testing, status is the one used. Declared below as listenToggles rather than a button/readout since the shape (one shared array dataref with a per-channel index) doesn't fit EfisAdapter's button model (one stateDataref per button) -- src/rmp-panel.js resolves/subscribes it directly against the adapter's own client instead. Tapping the ACP knob (as opposed to dragging it, which is the volume control) fires the toggle -- needed a small hand-patch to vendor/rmp.js's <acp-knob> to add an onTap() hook, since it only shipped with a self-contained tap-toggles-its-own-lamp gesture -- see vendor/README.md.",
   "_note_on_encoder_stepValue": "All four encoder.stepValue fields below are deliberately 1, not the bands' real per-detent step sizes (COM fine=5/coarse=1000, volume's 0-1 granularity) -- EfisAdapter.adjustReadoutValue(name, deltaSteps) always computes next = current + deltaSteps*stepValue, and src/rmp-panel.js already computes and passes the *fully real* delta itself (via radio-panel.js's nextStandbyRaw() for tuning, a plain target-current subtraction for volume), so stepValue here only needs to be a no-op multiplier -- exactly the same convention radio-panel-generic.json already uses for the same reason. Setting this to a real step size double-applies it (confirmed live 2026-08-16: stepValue 5 turned a 1000 coarse step into 5000, and a 5 fine step into 25, which is what 'the MHz digit goes crazy and the kHz still rolls over' actually was).",
 
   "readouts": [
@@ -91,6 +91,21 @@
       "name": "MIC_VHF2",
       "command": "laminar/A333/audio/capt/mic_push2",
       "stateDataref": "laminar/A333/audio/capt/mic_status2"
+    }
+  ],
+
+  "listenToggles": [
+    {
+      "channel": "vhf1",
+      "command": "laminar/A333/audio/capt/listen_press00",
+      "stateDataref": "laminar/A333/audio/capt/listen_status",
+      "stateIndex": 0
+    },
+    {
+      "channel": "vhf2",
+      "command": "laminar/A333/audio/capt/listen_press01",
+      "stateDataref": "laminar/A333/audio/capt/listen_status",
+      "stateIndex": 1
     }
   ]
 }

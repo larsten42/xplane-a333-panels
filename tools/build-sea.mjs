@@ -56,6 +56,7 @@ const ASSETS = [
   "config/profiles/fcu-a333.json",
   "config/profiles/radio-panel-generic.json",
   "config/profiles/rmp-acp-a333.json",
+  "config/profiles/rmp-acp-toliss-airbus.json",
   "src/app.js",
   "src/mcdu-adapter.js",
   "src/mcdu-keypad.js",

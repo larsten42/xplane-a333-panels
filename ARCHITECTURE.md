@@ -314,10 +314,13 @@ wiring up a new profile.
 
 ### RMP+ACP
 
-Airbus A330 (stock) only — the stock/default aircraft's own RTP (X-Plane's
-name for the real-hardware RMP) + ACP, Captain's side, **VHF1/VHF2 only for
-now** — see `config/profiles/rmp-acp-a333.json`'s own description for the
-full reasoning and what's still unwired.
+Airbus A330 (stock), plus an **experimental** profile for the ToLiss
+Airbus add-on (see its own subsection below) — the stock/default
+aircraft's own RTP (X-Plane's name for the real-hardware RMP) + ACP,
+Captain's side, **VHF1/VHF2 only for now** — see
+`config/profiles/rmp-acp-a333.json`'s own description for the full
+reasoning and what's still unwired. Everything below describes the stock
+A330 profile specifically unless noted otherwise.
 
 - **Channel select**: VHF1/VHF2 pushbuttons pick which underlying radio
   (COM1/COM2) the shared active/standby display and tuning knob currently
@@ -374,6 +377,49 @@ full reasoning and what's still unwired.
   clipping when the stack is taller than the viewport.
 - **Not wired yet**: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the
   ACP's INT/CAB/PA/nav-reception rows.
+
+**ToLiss Airbus profile** (`rmp-acp-toliss-airbus.json`): a first pass
+built by name-matching against a supplied dataref/command listing
+(`docs/toliss-a340/{datarefs,commands}.txt`), not verified against a
+running ToLiss install — same caveat as the EFIS ToLiss profile, see
+`CONTRIBUTING.md` if you can help verify it. Real, mechanical differences
+from the stock profile, not just different names for the same shapes:
+
+- **Tuning is command-based, not direct-write**: ToLiss's RMP1Freq/
+  RMP1StbyFreq datarefs aren't confirmed writable (or what validation a
+  write would get), unlike the stock A330's standby datarefs. The tune
+  knob instead fires RMP1FreqUp/DownLrg (coarse) and RMP1FreqUp/DownSml
+  (fine) directly, one press per detent — `src/rmp-panel.js` checks
+  `EfisAdapter.hasWritableEncoder(name)` per readout and falls back to
+  this path when there's no writable encoder, rather than assuming every
+  profile can offer one.
+- **COM1 and COM2 alias the same dataref on purpose**: no separate
+  per-channel frequency store was found for ToLiss in the supplied
+  listing — RMP1Freq/RMP1StbyFreq look like the RMP's own currently-
+  displayed value, not independent storage the way the stock A330's RTP
+  is (a routing layer over two separate underlying COM radios). See the
+  profile's own `_note_on_architecture`.
+- **Display scale**: ToLiss's frequency datarefs are assumed to be plain
+  float MHz (`118.505`), not the stock A330's pre-scaled `_833` integers
+  (`118505`) — readouts declare `displayScale: 1000` and
+  `src/rmp-panel.js`'s `syncDisplay()` applies it before rendering.
+- **Several gaps left honestly unwired rather than guessed**: no RMP
+  power command was found at all (silently no-ops, same as any profile
+  without an `RTP_POWER` button); MIC_VHF1/VHF2 and the channel-select
+  buttons fire real commands but have no confirmed lit-state feedback
+  (`ACP1Switch`/`RMP1SelFunc`'s exact value shapes are unconfirmed — the
+  channel-select litValue guess is low-risk since COM1/COM2 alias the
+  same data anyway, so a wrong guess only miscolors a caret, not lose
+  data); no reception-volume dataref was found at all; the listen-toggle
+  commands (`ListenVHF1`/`ListenVHF2`) are wired but have no confirmed
+  state dataref to light the lamp from. See the profile's own `_gap_*`
+  fields for the full reasoning on each.
+- **`listenToggles`, profile-driven now**: this used to be hardcoded in
+  `src/rmp-panel.js` for the stock A330 specifically; adding the ToLiss
+  profile meant generalizing it into a profile-declared array (channel,
+  command, optional stateDataref/stateIndex) that `wireListenToggles()`
+  resolves directly against the adapter's client, same as before — see
+  the stock profile's own updated `_note_on_listen_toggle`.
 
 ### Shared
 
@@ -433,12 +479,15 @@ flag exactly what's confirmed vs. deduced vs. genuinely missing (the LS
 button, BRG1/BRG2 selector, and baro unit-ring toggle had no plausible
 match at all). Wire into `AIRCRAFT_EFIS_PROFILES` in `app.js` the same way
 as `efis-a333.json`; verify every row with `tools/discover.mjs` before
-trusting it. Note this only covers EFIS — MCDU's *screen* (not its keys),
-the Radio panel, and RMP+ACP all assume a data/interaction shape ToLiss
-doesn't share (RMP+ACP most of all: it's built directly against the stock
-A330's own `laminar/A333/rtp_L/...`/`.../audio/capt/...` namespace, nothing
-like ToLiss's `AirbusFBW/RMP{1,2,3}`), so porting those needs real code
-changes, not just a profile.
+trusting it. Note this only covers EFIS — MCDU's *screen* (not its keys)
+and the Radio panel both still assume a data/interaction shape ToLiss
+doesn't share, so porting those needs real code changes, not just a
+profile. RMP+ACP turned out to be portable after all despite starting
+from the same `laminar/A333/rtp_L/...`/`.../audio/capt/...`-specific
+assumptions as the Radio panel — see `rmp-acp-toliss-airbus.json` and its
+own RMP+ACP interface subsection above for what `src/rmp-panel.js` needed
+to become profile-driven (writable-encoder detection, listenToggles,
+display scale) to make that work as a profile swap instead.
 
 **MCDU** (`default-fms.json`-shaped) has four parts:
 
@@ -559,6 +608,7 @@ config/profiles/
   fcu-a333.json                     FCU dataref/command mapping for the stock FCU (Airbus only)
   radio-panel-generic.json          Radio dataref/command mapping — aircraft-generic, not Airbus/737-specific
   rmp-acp-a333.json                 RMP+ACP dataref/command mapping for the stock A330's RTP/ACP — VHF1/VHF2 only so far, see its own _note_on_*/_gap_* fields
+  rmp-acp-toliss-airbus.json        RMP+ACP mapping for the ToLiss Airbus add-on — deduced, not live-verified, see its own _note_provenance/_gap_* fields
 docs/xplane-web-api-notes.md      protocol reference notes + sources
 docs/dataref-inventory.md         every dataref/command each panel actually uses, derived from config/profiles/
 tools/

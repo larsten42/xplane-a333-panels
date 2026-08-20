@@ -147,25 +147,22 @@ listed above since nothing in the app fires them anymore.
 
 ---
 
-## RMP+ACP (`rmp-acp-a333.json`, Airbus A330 only)
+## RMP+ACP (`rmp-acp-a333.json`, Airbus A330; `rmp-acp-toliss-airbus.json`, ToLiss Airbus)
 
-Stock/default A330's own RTP (X-Plane's name for the real-hardware RMP) and
-ACP, Captain's side only, VHF1/VHF2 scoped for now — see the profile's own
-`description`/`_note_on_*` fields for the fuller reasoning. Under
-`laminar/A333/rtp_L/...` and `laminar/A333/audio/capt/...`, a completely
-separate namespace from ToLiss's `AirbusFBW/RMP{1,2,3}` (different aircraft,
-different implementation of the same real-world concept).
+Two independent profiles, one per aircraft's own namespace — see each
+profile's own `description`/`_note_on_*`/`_gap_*` fields for the fuller
+reasoning. Both are VHF1/VHF2-scoped for now.
 
-### Datarefs
+### Stock A330 — Datarefs
 
 - `laminar/A333/comm/rtp_L/vhf_1_status`, `vhf_2_status` (two independent booleans, not a shared enum, confirmed live)
 - `laminar/A333/comm/rtp_L/off_status` (1 = off, 0 = on, confirmed live)
 - `laminar/A333/audio/capt/mic_status1`, `mic_status2` (confirmed live mutually exclusive)
 - `sim/cockpit2/radios/actuators/com{1,2}_frequency_hz_833`, `com{1,2}_standby_frequency_hz_833` (same datarefs the generic radio panel already uses — see `_note_on_tuning`)
 - `laminar/A333/audio/capt/volume_pos_0`, `volume_pos_1` (read fine; writing a fractional value fails live with an X-Plane-side "incompatible_data" error — see the profile's own `_gap_acp_volume_write`)
-- `laminar/A333/audio/capt/listen_status` (16-element array, confirmed live index 0 = VHF1/index 1 = VHF2, plain 0/1 — resolved/subscribed directly in `src/rmp-panel.js`, not through the profile, since EfisAdapter's button model doesn't support one shared array dataref with a per-button index)
+- `laminar/A333/audio/capt/listen_status` (16-element array, confirmed live index 0 = VHF1/index 1 = VHF2, plain 0/1 — declared as this profile's `listenToggles`, resolved/subscribed directly in `src/rmp-panel.js` rather than through the usual buttons/readouts path, since EfisAdapter's button model doesn't support one shared array dataref with a per-button index)
 
-### Commands
+### Stock A330 — Commands
 
 - `laminar/A333/rtp_L/vhf_1/sel_switch`, `vhf_2/sel_switch` (channel select)
 - `laminar/A333/rtp_L/freq_txfr/sel_switch` (active/standby transfer)
@@ -178,3 +175,29 @@ resolved but not used — tuning reuses the generic radio panel's direct
 standby-dataref write instead, see `_note_on_tuning`. Not yet wired at all:
 VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the ACP's INT/CAB/PA/
 nav-reception rows.
+
+### ToLiss Airbus — Datarefs and commands
+
+**Deduced from a supplied name listing (`docs/toliss-a340/*.txt`), not
+live-verified — see the profile's own `_note_provenance`.**
+
+- `AirbusFBW/RMP1Freq`, `RMP1StbyFreq` (active/standby — COM1 and COM2 both
+  point at these same two datarefs on purpose, see `_note_on_architecture`;
+  assumed plain float MHz, not pre-scaled like the stock A330's `_833`
+  datarefs — `displayScale: 1000` on each readout compensates)
+- `AirbusFBW/RMP1FreqUpLrg`/`DownLrg` (coarse), `RMP1FreqUpSml`/`DownSml`
+  (fine) — commands, not a writable dataref (see `_note_on_tuning`)
+- `AirbusFBW/VHF1Capt`, `VHF2Capt` (channel select — commands only; the
+  paired state dataref `RMP1SelFunc`'s litValue 0/1 is an unconfirmed
+  ordering guess)
+- `AirbusFBW/RMPSwapCapt` (active/standby transfer)
+- `AirbusFBW/ACP1/VHF1Press`, `VHF2Press` (transmit select — command only,
+  no confirmed lit-state dataref; see `_gap_mic_state`)
+- `AirbusFBW/ListenVHF1`, `ListenVHF2` (listen toggle — command only, no
+  confirmed state dataref at all; see `_gap_listen_state`)
+
+No RMP power command and no per-channel ACP reception-volume dataref were
+found in the supplied listing at all — left entirely unwired rather than
+guessed (`_gap_rtp_power`, `_gap_acp_volume`). VHF3/HF1/HF2/AM and the
+RMP's BackupNav (VOR/ILS/ADF) row aren't wired, same scope as the stock
+profile.

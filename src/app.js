@@ -47,12 +47,16 @@ const AIRCRAFT_EFIS_PROFILES = {
 const AIRCRAFT_FCU_PROFILES = {
   a333: "./config/profiles/fcu-a333.json",
 };
-// RMP+ACP is stock-A330-specific (laminar/A333/rtp_L/... + .../audio/capt/...
-// — see config/profiles/rmp-acp-a333.json's own description), so it's gated
-// the same way as EFIS/FCU rather than being aircraft-generic like the radio
-// panel below.
+// RMP+ACP is aircraft-specific (laminar/A333/rtp_L/... + .../audio/capt/...
+// for the stock A330, AirbusFBW/RMP1.../ACP1... for ToLiss — see each
+// profile's own description), so it's gated the same way as EFIS/FCU
+// rather than being aircraft-generic like the radio panel below. The
+// ToLiss entry is a first-pass, name-matched-only mapping, same caveat
+// as AIRCRAFT_EFIS_PROFILES' own toliss-airbus entry — see
+// rmp-acp-toliss-airbus.json's _note_provenance.
 const AIRCRAFT_RMP_PROFILES = {
   a333: "./config/profiles/rmp-acp-a333.json",
+  "toliss-airbus": "./config/profiles/rmp-acp-toliss-airbus.json",
 };
 
 // Unlike EFIS/FCU, the radio panel lives under X-Plane's own generic

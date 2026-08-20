@@ -511,4 +511,16 @@ export class EfisAdapter {
   isAvailable(name) {
     return this._commandIds.has(name) || this._onOffCommandIds.has(name);
   }
+
+  /**
+   * Whether readout `name` has a resolved encoder.writeDataref, i.e.
+   * whether adjustReadoutValue() will actually write something rather than
+   * warn-and-no-op. Lets a caller choose between a direct-write and a
+   * step-command tuning path per readout (see src/rmp-panel.js) instead of
+   * assuming every profile can offer a writable dataref the way the stock
+   * A330's RTP profile does.
+   */
+  hasWritableEncoder(name) {
+    return this._encoderWriteIds.has(name);
+  }
 }

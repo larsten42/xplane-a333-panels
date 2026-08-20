@@ -1,0 +1,89 @@
+{
+  "id": "toliss-airbus-rmp-acp",
+  "aircraft": "ToLiss Airbus (AirbusFBW namespace)",
+  "side": "captain",
+  "label": "ToLiss Airbus RMP1 + ACP1 — VHF1/VHF2 only",
+  "description": "Dataref/command mapping for the ToLiss Airbus add-on's RMP1 (Captain's Radio Management Panel) and ACP1 (Captain's Audio Control Panel), under the AirbusFBW/ namespace. Scoped to VHF1/VHF2 (COM1/COM2) for now, matching config/profiles/rmp-acp-a333.json's own first-pass scope. See docs/toliss-a340/{datarefs,commands}.txt for the source dataref/command listing this was built from, and _note_provenance below.",
+
+  "_note_provenance": "NOT live-verified — deduced entirely from name-matching against docs/toliss-a340/datarefs.txt and commands.txt (a supplied name listing, no types/values/writability metadata at all -- same starting point efis-toliss-airbus.json was built from). Every entry below should be confirmed with tools/discover.mjs against a real running ToLiss Airbus before trusting it, especially the two _gap_* items and the litValue guesses, which have no confirmed basis at all beyond a plausible-looking name.",
+  "_note_on_architecture": "ToLiss's RMP1 datarefs (RMP1Freq/RMP1StbyFreq) look like the RMP's own currently-displayed value, not independent per-channel storage the way the stock A330's RTP is (a routing layer over separate com1_standby_frequency_hz_833/com2_standby_frequency_hz_833 datarefs -- see rmp-acp-a333.json's _note_on_tuning). No separate underlying COM1/COM2 dataref was found in the supplied listing at all. Because of this, COM1 and COM2 below intentionally point at the exact same RMP1Freq/RMP1StbyFreq datarefs and the exact same RMP1FreqUp/DownLrg/Sml commands -- there is only one RMP1 display/tune surface here, shared across whichever channel VHF1Capt/VHF2Capt last selected, which is also exactly how src/rmp-panel.js already scopes tuning input to whichever channel is currently selected. This should behave correctly in practice (turning the knob only ever affects the channel actually selected on the real RMP), it just means 'COM1' and 'COM2' as modeled here aren't independently-persisted the way the stock profile's are.",
+  "_note_on_tuning": "RMP1Freq/RMP1StbyFreq's writability isn't confirmed, and even if writable, what validation (rounding to a real 8.33kHz channel, rejecting out-of-range values, ...) a direct write would get is unknown -- unlike the stock A330's standby datarefs, confirmed live to accept a direct write cleanly. So no encoder.writeDataref here; instead each COM readout declares commands.coarseUp/coarseDown/fineUp/fineDown (RMP1FreqUpLrg/DownLrg for coarse -- 'Lrg' read as large/MHz steps -- RMP1FreqUpSml/DownSml for fine/kHz steps), and src/rmp-panel.js's tune knob falls back to firing those directly, one press per detent, when a readout has no writable encoder (see that file's own top comment). This also sidesteps needing to reproduce ToLiss's real step sizes/grid/wraparound locally the way radio-panel.js's nextStandbyRaw() does for the stock aircraft -- the sim owns all of that on this path.",
+  "_note_on_display_scale": "RMP1Freq/RMP1StbyFreq are assumed to be plain float MHz values (e.g. 118.505), unlike the stock A330's _833 datarefs which already come out pre-scaled as a 6-digit integer (118505) -- going by naming convention only, not confirmed. displayScale:1000 below tells src/rmp-panel.js's syncDisplay() to scale before rendering; if RMP1Freq actually already comes out as an integer, this would show a garbled/oversized number and displayScale should be removed.",
+  "_note_on_channel_select": "RMP1SelFunc looks like an enum for which function the RMP is currently displaying (VHF1/VHF2/VHF3, plus presumably the BackupNav modes -- see RMP1/BackupNav*Press commands, not wired here, out of VHF1/VHF2 scope same as the stock profile's own STBY NAV row). litValue 0/1 for VHF1/VHF2 below is a plausible-ordering guess with no other basis -- if wrong, the practical effect is limited: COM1/COM2 alias the same dataref anyway (see _note_on_architecture), so a wrong guess would just leave the channel-select caret not highlighting correctly, not lose or misdirect any actual data.",
+  "_gap_rtp_power": "No RMP power on/off command was found in the supplied command listing at all (only RMPPowerAnim, a dataref, presumably a visual-only animation position). Left entirely unwired rather than guessed -- src/rmp-panel.js's power-lever wiring already no-ops cleanly when a profile has no RTP_POWER button (see its own isAvailable() guards), so this isn't a hardcoded assumption anywhere.",
+  "_gap_mic_state": "ACP1/VHF1Press and ACP1/VHF2Press (transmit-select) are confirmed by name, but ACP1Switch -- the only plausible state dataref nearby -- gives no indication from its name alone of its shape (a single enum? a bitmask? does it also cover the reception/listen side, combined?). Wiring a wrong-shaped exact-match guess here risks a MIC button that never lights (best case, cosmetic) or reads a real mutual-exclusivity state incorrectly (worse). Left as command-only (no stateDataref) rather than guessed -- pressing still works, there's just no lit feedback yet.",
+  "_gap_acp_volume": "No per-channel ACP reception volume dataref was found in the supplied listing (ACP1RotaryPositions is a plausible candidate by name, but its shape -- array vs per-channel, value range, writability -- is completely unconfirmed). VOL_VHF1/VOL_VHF2 are omitted entirely rather than wired against a guess with zero basis; src/rmp-panel.js already skips wiring the ACP volume knobs cleanly when a profile doesn't declare them.",
+  "_gap_listen_state": "ListenVHF1/ListenVHF2 (commands) are confirmed by name and wired below via listenToggles, but no corresponding state dataref was found at all (AudioSwitching is the only remotely plausible name nearby, with no confirmation it's even related). Tapping the ACP knob still fires the real command, it just never lights the lamp -- see src/rmp-panel.js's wireListenToggles(), which already tolerates a listenToggles entry with no stateDataref for exactly this case.",
+
+  "readouts": [
+    {
+      "name": "COM1",
+      "format": "raw",
+      "displayScale": 1000,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1Freq",
+        "standby": "AirbusFBW/RMP1StbyFreq"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "COM2",
+      "_note": "Intentionally identical to COM1 above -- see _note_on_architecture.",
+      "format": "raw",
+      "displayScale": 1000,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1Freq",
+        "standby": "AirbusFBW/RMP1StbyFreq"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    }
+  ],
+
+  "buttons": [
+    {
+      "name": "SEL_VHF1",
+      "command": "AirbusFBW/VHF1Capt",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 0
+    },
+    {
+      "name": "SEL_VHF2",
+      "command": "AirbusFBW/VHF2Capt",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 1
+    },
+    {
+      "name": "RTP_XFER",
+      "command": "AirbusFBW/RMPSwapCapt"
+    },
+    {
+      "name": "MIC_VHF1",
+      "command": "AirbusFBW/ACP1/VHF1Press"
+    },
+    {
+      "name": "MIC_VHF2",
+      "command": "AirbusFBW/ACP1/VHF2Press"
+    }
+  ],
+
+  "listenToggles": [
+    {
+      "channel": "vhf1",
+      "command": "AirbusFBW/ListenVHF1"
+    },
+    {
+      "channel": "vhf2",
+      "command": "AirbusFBW/ListenVHF2"
+    }
+  ]
+}
