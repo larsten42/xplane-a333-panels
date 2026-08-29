@@ -1,0 +1,170 @@
+{
+  "id": "toliss-airbus-mcdu",
+  "aircraft": "ToLiss Airbus (AirbusFBW namespace)",
+  "label": "ToLiss Airbus MCDU",
+  "description": "Screen and keypad mapping for the ToLiss Airbus add-on's MCDU, under the AirbusFBW/MCDU{cdu}... namespace. Live-verified 2026-08-28 against a running ToLiss A330: read a real INIT page and the F-PLN page, and confirmed the keypad end-to-end (typed T/E/S into the scratchpad via individual key commands, watched it accumulate; CLR removed one character per press, matching a real Airbus CDU's backspace-style clear). Genuinely different screen shape from the stock A330's MCDU (see mcdu-adapter.js's own top comment on the two connect paths) — this profile and default-fms.json don't share any code path, changing one can't affect the other.",
+
+  "_note_provenance": "Screen content and keypad presses are live-confirmed as described above. The exact color-letter-to-hue mapping below is lower confidence -- 'g' (green, seen on a live PPOS readout) and 'w' (white, seen on labels/dashes/placeholders) match real Airbus MCDU convention exactly; 'a' (amber) and 'y' (yellow) are standard-convention guesses not yet seen live; 'b' is assumed to be Airbus's cyan-ish 'blue' (the shade used for e.g. active waypoints/database-sourced data on a real MCDU) but unconfirmed; 's' is the least confident of all -- seen live only on a small page-number-style readout ('23' in the title's top-right corner), which suggests it's a small/dim white variant rather than a distinct hue, but that's a guess. None of this affects functionality, only which CSS color class a character gets. Note on that page-number readout: the raw bytes really are literal ASCII '2'/'3' (confirmed live 2026-08-29), i.e. 'page 2 of 3' -- on the real ToLiss cockpit texture this renders in a small stylized font that can look like a pair of left/right arrows rather than digits, but the underlying data and this app's rendering of it are both correct, so no code change was made for that.",
+  "_note_on_rows": "14 rows total, matching the stock profile's own row count 1:1 even though the real derivation is different: title + 6x(label+content) + scratchpad = 1 + 12 + 1 = 14. Each 'cont'/'scont' pair (and title/stitle) are two sources for the same physical row -- confirmed live these are mutually exclusive (a page shows one or the other, never both), modeled as large-font vs small-font per src/mcdu-adapter.js's _recomputeColoredRow(). No reverse/flash/underline support -- no dataref for any of those was found in the supplied name listing for this screen, so every character renders plain (this profile's own _gap, not a mcdu-adapter.js limitation).",
+  "_note_on_keypad": "AirbusFBW/MCDU{cdu}Key* et al. are complete command names already (no per-CDU prefix composition needed, unlike the stock profile's sim/FMS-vs-sim/FMS2-style commandPrefixByCdu) -- every key here uses commandTemplate with a bare {cdu} substitution instead. commandPrefixByCdu below is a harmless unused placeholder, present only so mcdu-adapter.js's _resolveKeys() doesn't warn about a missing one (nothing actually reads it once every key has its own commandTemplate). No CLB/CRZ/DES/HOLD/EXEC/FIX/LEGS/DEP_ARR/CDU_POPUP/CDU_POPOUT -- the real Airbus MCDU doesn't have dedicated hardware keys for any of these (that's a Boeing CDU/stock-FMS-profile shape), and none of the equivalent-looking ToLiss command names exist in the supplied listing either, so they're omitted rather than guessed. The 4-way SlewUp/Down/Left/Right cluster (a real Airbus MCDU control, used for cursor movement in some data-entry fields) replaces the stock profile's simpler PREV/NEXT/UP/DOWN concept -- new SLEW_* logical key names, not reused from the stock profile's UP/DOWN.",
+  "_note_on_box_placeholder": "A real Airbus MCDU's 'mandatory field, not yet entered' indicator (a row of small amber boxes -- e.g. an empty CO RTE or FROM/TO on INIT/A) comes through as literal repeated 'E' characters specifically in the 's' color, confirmed live 2026-08-29. This is genuinely contextual, not a universal 'E means box' rule: typing a real letter E elsewhere (confirmed via the scratchpad) shows a real E, and 's' is also used for real small text elsewhere (the page-number readout in the title's corner) -- src/mcdu-adapter.js's _recomputeColoredRow() special-cases only the exact (character='E', colorLetter='s') combination, substituting a box glyph in amber regardless of what colorMap.s says for 's' text that isn't this pattern. Not confirmed whether any *other* letter/color combination is also secretly a box-family glyph (this profile's own 's' color guess note in _note_provenance covers the general uncertainty there).",
+  "_note_on_degree_symbol": "ToLiss's screen text uses the classic Airbus/Boeing CDU font convention where a literal backtick byte (0x60) means the degree symbol, not an actual backtick -- confirmed live 2026-08-29 on the PROG page's BRG/DIST field (cont4w raw text was ' ---`  /----.-', i.e. '---°/----.-'). Unlike the box-glyph fix above, this remap isn't color-specific -- src/mcdu-adapter.js's decodeColoredChars() replaces every backtick with ° for all colors, since a literal backtick has no legitimate use on an MCDU screen.",
+  "_note_on_bracket_placeholder": "A second 's'-channel symbol-font finding alongside _note_on_box_placeholder's 'E'=box: on the TAKEOFF PERF page, mandatory numeric fields not yet entered (V1/VR/FLAPS-THS/TRANS-ALT-style fields) render as a bracket placeholder, e.g. FLAPS/THS shows '[ ]/[ ]'. Confirmed live 2026-08-29 that the raw bytes are literal 'A' and 'B' in the 's' color (cont3s = '...A B A B'), i.e. 'A' is the left half of the bracket and 'B' is the right half. src/mcdu-adapter.js's SYMBOL_FONT_GLYPHS table maps both 'E'->box and 'A'/'B'->'['/']' for the 's' channel; the real letters A and B still render as themselves in every other color.",
+
+  "screen": {
+    "kind": "coloredLines",
+    "lines": 14,
+    "cols": 24,
+    "datarefTemplate": "AirbusFBW/MCDU{cdu}{prefix}{color}",
+    "colors": ["a", "b", "g", "m", "s", "w", "y"],
+    "colorMap": { "a": "amber", "b": "cyan", "g": "green", "m": "magenta", "s": "white", "w": "white", "y": "yellow" },
+    "rows": [
+      { "sources": [{ "prefix": "title", "large": true }, { "prefix": "stitle", "large": false }] },
+      { "sources": [{ "prefix": "label1", "large": true }] },
+      { "sources": [{ "prefix": "cont1", "large": true }, { "prefix": "scont1", "large": false }] },
+      { "sources": [{ "prefix": "label2", "large": true }] },
+      { "sources": [{ "prefix": "cont2", "large": true }, { "prefix": "scont2", "large": false }] },
+      { "sources": [{ "prefix": "label3", "large": true }] },
+      { "sources": [{ "prefix": "cont3", "large": true }, { "prefix": "scont3", "large": false }] },
+      { "sources": [{ "prefix": "label4", "large": true }] },
+      { "sources": [{ "prefix": "cont4", "large": true }, { "prefix": "scont4", "large": false }] },
+      { "sources": [{ "prefix": "label5", "large": true }] },
+      { "sources": [{ "prefix": "cont5", "large": true }, { "prefix": "scont5", "large": false }] },
+      { "sources": [{ "prefix": "label6", "large": true }] },
+      { "sources": [{ "prefix": "cont6", "large": true }, { "prefix": "scont6", "large": false }] },
+      { "sources": [{ "prefix": "sp", "large": true }] }
+    ]
+  },
+
+  "commandPrefixByCdu": { "1": "unused", "2": "unused" },
+
+  "keys": {
+    "numeric": {
+      "0": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key0" },
+      "1": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key1" },
+      "2": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key2" },
+      "3": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key3" },
+      "4": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key4" },
+      "5": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key5" },
+      "6": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key6" },
+      "7": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key7" },
+      "8": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key8" },
+      "9": { "commandTemplate": "AirbusFBW/MCDU{cdu}Key9" }
+    },
+    "alpha": {
+      "A": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyA" },
+      "B": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyB" },
+      "C": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyC" },
+      "D": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyD" },
+      "E": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyE" },
+      "F": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyF" },
+      "G": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyG" },
+      "H": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyH" },
+      "I": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyI" },
+      "J": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyJ" },
+      "K": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyK" },
+      "L": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyL" },
+      "M": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyM" },
+      "N": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyN" },
+      "O": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyO" },
+      "P": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyP" },
+      "Q": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyQ" },
+      "R": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyR" },
+      "S": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyS" },
+      "T": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyT", "verified": true },
+      "U": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyU" },
+      "V": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyV" },
+      "W": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyW" },
+      "X": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyX" },
+      "Y": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyY" },
+      "Z": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyZ" },
+      "SP": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeySpace" }
+    },
+    "punctuation": {
+      "PERIOD": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyDecimal" },
+      "MINUS": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyPM" },
+      "SLASH": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeySlash" },
+      "CLR": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyClear", "verified": true },
+      "OVERFLY": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyOverfly" }
+    },
+    "line_select_left": {
+      "L1": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK1L" },
+      "L2": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK2L" },
+      "L3": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK3L" },
+      "L4": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK4L" },
+      "L5": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK5L" },
+      "L6": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK6L" }
+    },
+    "line_select_right": {
+      "R1": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK1R" },
+      "R2": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK2R" },
+      "R3": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK3R" },
+      "R4": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK4R" },
+      "R5": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK5R" },
+      "R6": { "commandTemplate": "AirbusFBW/MCDU{cdu}LSK6R" }
+    },
+    "function": {
+      "INDEX": { "commandTemplate": "AirbusFBW/MCDU{cdu}Init" },
+      "FPLN": { "commandTemplate": "AirbusFBW/MCDU{cdu}Fpln", "verified": true },
+      "DIR_INTC": { "commandTemplate": "AirbusFBW/MCDU{cdu}DirTo" },
+      "PROG": { "commandTemplate": "AirbusFBW/MCDU{cdu}Prog" },
+      "PERF": { "commandTemplate": "AirbusFBW/MCDU{cdu}Perf" },
+      "DATA": { "commandTemplate": "AirbusFBW/MCDU{cdu}Data" },
+      "NAVRAD": { "commandTemplate": "AirbusFBW/MCDU{cdu}RadNav" },
+      "FUEL_PRED": { "commandTemplate": "AirbusFBW/MCDU{cdu}FuelPred" },
+      "SEC_FPLN": { "commandTemplate": "AirbusFBW/MCDU{cdu}SecFpln" },
+      "ATC_COMM": { "commandTemplate": "AirbusFBW/MCDU{cdu}ATC" },
+      "MENU": { "commandTemplate": "AirbusFBW/MCDU{cdu}Menu" },
+      "AIRPORT": { "commandTemplate": "AirbusFBW/MCDU{cdu}Airport" }
+    },
+    "brightness": {
+      "BRT": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyBright" },
+      "DIM": { "commandTemplate": "AirbusFBW/MCDU{cdu}KeyDim" }
+    },
+    "slew": {
+      "SLEW_UP": { "commandTemplate": "AirbusFBW/MCDU{cdu}SlewUp" },
+      "SLEW_DOWN": { "commandTemplate": "AirbusFBW/MCDU{cdu}SlewDown" },
+      "SLEW_LEFT": { "commandTemplate": "AirbusFBW/MCDU{cdu}SlewLeft" },
+      "SLEW_RIGHT": { "commandTemplate": "AirbusFBW/MCDU{cdu}SlewRight" }
+    }
+  },
+
+  "keypadLayout": {
+    "_note": "Same physical bezel shape as default-fms.json's own layout (a real Airbus MCDU keypad looks the same regardless of which aircraft simulates it) except utilityBlock, which uses ToLiss's real 4-way SlewUp/Down/Left/Right cluster instead of the stock profile's simpler PREV/NEXT/UP/DOWN.",
+    "functionBlock": {
+      "cols": 7,
+      "rows": [
+        ["DIR_INTC", "PROG", "PERF", "INDEX", "DATA", "", "BRT"],
+        ["FPLN", "NAVRAD", "FUEL_PRED", "SEC_FPLN", "ATC_COMM", "MENU", "DIM"]
+      ]
+    },
+    "utilityBlock": {
+      "cols": 2,
+      "rows": [
+        ["AIRPORT", ""],
+        ["SLEW_LEFT", "SLEW_UP"],
+        ["SLEW_RIGHT", "SLEW_DOWN"]
+      ]
+    },
+    "numericBlock": {
+      "cols": 3,
+      "rows": [
+        ["1", "2", "3"],
+        ["4", "5", "6"],
+        ["7", "8", "9"],
+        ["PERIOD", "0", "MINUS"]
+      ]
+    },
+    "alphaBlock": {
+      "cols": 5,
+      "rows": [
+        ["A", "B", "C", "D", "E"],
+        ["F", "G", "H", "I", "J"],
+        ["K", "L", "M", "N", "O"],
+        ["P", "Q", "R", "S", "T"],
+        ["U", "V", "W", "X", "Y"],
+        ["Z", "SLASH", "SP", "OVERFLY", "CLR"]
+      ]
+    }
+  }
+}

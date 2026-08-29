@@ -217,6 +217,14 @@ function keyLabel(keyName) {
     NEXT: "▶",
     UP: "▲",
     DOWN: "▼",
+    // ToLiss's real 4-way slew cluster (config/profiles/mcdu-toliss-airbus.json)
+    // — a separate concept from PREV/NEXT/UP/DOWN above (which model the
+    // stock default FMS's simpler 2-way page-scroll keys), not a reuse of
+    // those names, so both profiles can keep their own real keys' shape.
+    SLEW_UP: "▲",
+    SLEW_DOWN: "▼",
+    SLEW_LEFT: "◀",
+    SLEW_RIGHT: "▶",
     // Real line-select keys aren't printed "L1"/"R1" — position along the
     // bezel already says which line they select — just an unlabeled dash.
     // Left empty and drawn as a CSS bar (see .mcdu-lsk-column .mcdu-key::before

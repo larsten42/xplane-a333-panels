@@ -39,6 +39,7 @@ const AIRCRAFT_KEY = "mcdu.aircraft";
 const AIRCRAFT_MCDU_PROFILES = {
   a333: "./config/profiles/default-fms.json",
   b738: "./config/profiles/b738-fms.json",
+  "toliss-airbus": "./config/profiles/mcdu-toliss-airbus.json",
 };
 const AIRCRAFT_EFIS_PROFILES = {
   a333: "./config/profiles/efis-a333.json",

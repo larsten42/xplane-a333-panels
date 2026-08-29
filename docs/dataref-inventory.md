@@ -51,6 +51,45 @@ found live — see `ARCHITECTURE.md`'s "Known limitations".
 
 ---
 
+## MCDU (`mcdu-toliss-airbus.json`, ToLiss Airbus)
+
+Entirely different screen shape from the stock A330/737 MCDU above —
+`{cdu}` = 1/2, no CDU3. Live-verified 2026-08-28 (real page read correctly,
+keypad confirmed end-to-end) — see `ARCHITECTURE.md`'s MCDU interface
+subsection and the profile's own `_note_provenance`/`_note_on_rows`.
+
+### Datarefs
+
+`{prefix}` = one of `title`/`stitle`, `label1`…`label6`, `cont1`…`cont6`,
+`scont1`…`scont6`, `sp`; `{color}` = one of `a`/`b`/`g`/`m`/`s`/`w`/`y`
+(not every prefix has all 7 — resolved and skipped gracefully per-row,
+same "missing profile entry is disabled, not fatal" convention as
+everywhere else in this app):
+
+- `AirbusFBW/MCDU{cdu}{prefix}{color}`
+
+### Commands
+
+Every key is a complete command name already (`AirbusFBW/MCDU{cdu}{suffix}`,
+`{cdu}` substituted directly — no separate prefix composition needed,
+unlike the stock MCDU above):
+
+| Group | Suffixes |
+|---|---|
+| Numeric | `Key0` … `Key9` |
+| Alpha | `KeyA` … `KeyZ`, `KeySpace` |
+| Punctuation | `KeyDecimal`, `KeyPM`, `KeySlash`, `KeyClear`, `KeyOverfly` |
+| Line select keys | `LSK1L`/`LSK1R` … `LSK6L`/`LSK6R` |
+| Function keys | `Init`, `Fpln`, `DirTo`, `Prog`, `Perf`, `Data`, `RadNav`, `FuelPred`, `SecFpln`, `ATC`, `Menu`, `Airport` |
+| Brightness | `KeyBright`, `KeyDim` |
+| Slew (4-way cluster, real Airbus control) | `SlewUp`, `SlewDown`, `SlewLeft`, `SlewRight` |
+
+No `CLB`/`CRZ`/`DES`/`HOLD`/`EXEC`/`FIX`/`LEGS`/`DEP_ARR`/`CDU_popup`/
+`CDU_popout` equivalents exist — those are stock-FMS/Boeing-CDU concepts
+the real Airbus MCDU keypad doesn't have dedicated hardware keys for.
+
+---
+
 ## EFIS (`efis-a333.json`, Airbus A330 only)
 
 ### Datarefs

@@ -57,6 +57,21 @@ export class McduAdapter {
 
   /** Resolve all datarefs/commands for the current cduIndex against the live sim. */
   async connect() {
+    // ToLiss (config/profiles/mcdu-toliss-airbus.json) exposes its screen as
+    // many separate per-line, per-color plain-text datarefs rather than the
+    // stock aircraft's one text array + one style-bitfield array per line —
+    // a genuinely different shape, not just different names, so it gets its
+    // own connect path entirely (_connectColoredLinesScreen below) rather
+    // than being squeezed into the byte/style decoding below. Every other
+    // profile (default-fms.json, b738-fms.json) has no `kind` field at all,
+    // so this check — and everything below it — is unreached and unchanged
+    // for them.
+    if (this.profile.screen.kind === "coloredLines") {
+      await this._connectColoredLinesScreen();
+      await this._resolveKeys();
+      return;
+    }
+
     const { textDatarefTemplate, styleDatarefTemplate } = this.profile.screen;
     const textNames = [];
     const styleNames = [];
@@ -87,6 +102,95 @@ export class McduAdapter {
     }
 
     await this._resolveKeys();
+  }
+
+  /**
+   * ToLiss's screen shape (config/profiles/mcdu-toliss-airbus.json's
+   * `screen.rows`): each row is one or two "sources" (e.g. a row pairs a
+   * large-font `cont3` with a small-font `scont3` — confirmed live these
+   * are mutually exclusive per row, one real Airbus MCDU page never shows
+   * both at once, though nothing here assumes that and would still cope
+   * if it were ever wrong). Each source is itself split across up to 7
+   * separate same-length plain-text datarefs, one per color letter
+   * (`profile.screen.colors`) — confirmed live only one color's copy is
+   * ever non-blank at a given character position, the rest hold spaces.
+   * So: resolve every (row, source, color) combination against
+   * `screen.datarefTemplate`, skip whichever don't exist for this
+   * particular row (most rows only ever populate 1-2 of the 7 — e.g.
+   * `title` has no amber/magenta variant at all, confirmed live), and
+   * recompute the whole row by overlaying every color's text onto a blank
+   * line whenever any of its sources' datarefs push a new value.
+   */
+  async _connectColoredLinesScreen() {
+    const { rows, colors, colorMap, datarefTemplate } = this.profile.screen;
+    /** @type {Array<Array<Object<string,string[]>>>} [row][sourceIndex] -> {colorLetter: chars[]} */
+    this._coloredRaw = rows.map((row) => row.sources.map(() => ({})));
+
+    const nameInfo = [];
+    rows.forEach((row, r) => {
+      row.sources.forEach((source, s) => {
+        for (const color of colors) {
+          const name = datarefTemplate
+            .replace("{cdu}", String(this.cduIndex))
+            .replace("{prefix}", source.prefix)
+            .replace("{color}", color);
+          nameInfo.push({ name, row: r, sourceIndex: s, color });
+        }
+      });
+    });
+
+    const ids = await this.client.resolveDatarefIds(nameInfo.map((i) => i.name));
+    let resolvedCount = 0;
+    for (const info of nameInfo) {
+      const id = ids.get(info.name);
+      if (id == null) continue; // this row doesn't use this color — normal, not every row uses all 7
+      resolvedCount++;
+      this.client.subscribeDataref(id, (raw) => {
+        this._coloredRaw[info.row][info.sourceIndex][info.color] = decodeColoredChars(raw);
+        this._recomputeColoredRow(info.row);
+      });
+    }
+    if (resolvedCount === 0) {
+      console.warn("[mcdu-adapter] coloredLines screen: nothing resolved at all — wrong aircraft, or profile.screen.datarefTemplate/rows is wrong?");
+    }
+  }
+
+  /** Rebuilds one row of `this.screen` from every color/source currently cached for it — see _connectColoredLinesScreen()'s own comment for the shape. */
+  _recomputeColoredRow(rowIndex) {
+    const row = this.profile.screen.rows[rowIndex];
+    const { colorMap } = this.profile.screen;
+    const line = blankLine(this.cols);
+    for (let s = 0; s < row.sources.length; s++) {
+      const source = row.sources[s];
+      const byColor = this._coloredRaw[rowIndex][s];
+      for (const [colorLetter, chars] of Object.entries(byColor)) {
+        const colorName = colorMap[colorLetter] ?? "white";
+        for (let i = 0; i < this.cols; i++) {
+          let ch = chars[i];
+          if (!ch || ch === " ") continue; // blank at this position in this color -- some other color (or nothing) owns it
+          let color = colorName;
+          // Confirmed live 2026-08-29: the 's' channel isn't just a text
+          // color -- it doubles as a small "mandatory field, not yet
+          // entered" symbol font. Specific letters render as placeholder
+          // glyphs instead of themselves: "E" repeated is a row of small
+          // amber boxes (e.g. empty CO RTE/FROM-TO on INIT/A), while "A"/
+          // "B" are the left/right halves of a bracket placeholder (e.g.
+          // empty V1/VR/FLAPS-THS on TAKEOFF PERF, seen live as literal
+          // "A B" rendering as "[ ]"). Not every 's'-colored character is
+          // remapped though -- a small page-number readout also uses 's'
+          // and is real digits -- so only these exact letters are special-
+          // cased, regardless of what colorMap.s says otherwise.
+          const symbolGlyph = colorLetter === "s" ? SYMBOL_FONT_GLYPHS[ch] : undefined;
+          if (symbolGlyph) {
+            ch = symbolGlyph;
+            color = "amber";
+          }
+          line[i] = { char: ch, large: source.large, reverse: false, flash: false, underline: false, color };
+        }
+      }
+    }
+    this.screen[rowIndex] = line;
+    this.onScreenUpdate?.(rowIndex);
   }
 
   async _resolveKeys() {
@@ -212,4 +316,29 @@ function decodeLine(textB64, styleB64, cols) {
 
 function fillTemplate(template, cdu, line) {
   return template.replace("{cdu}", String(cdu)).replace("{line}", String(line));
+}
+
+// ToLiss's 's' screen color doubles as a "mandatory field, not yet
+// entered" symbol font -- see the long comment in _recomputeColoredRow().
+const SYMBOL_FONT_GLYPHS = { E: "▯", A: "[", B: "]" };
+
+/**
+ * Decodes one of ToLiss's screen-content datarefs: base64 -> UTF-8 ->
+ * trailing-NUL trimmed -> split into codepoints (not UTF-8 bytes, same
+ * reasoning as decodeLine() above — keeps a multi-byte character aligned
+ * to one screen column instead of several). Confirmed live 2026-08-28:
+ * these are plain fixed-width space-padded ASCII strings, not a byte/style
+ * pair like the stock aircraft's screen datarefs.
+ * @param {string} b64
+ * @returns {string[]}
+ */
+function decodeColoredChars(b64) {
+  // ToLiss's screen text uses the classic Airbus/Boeing CDU font convention
+  // where a literal backtick (0x60) is the degree symbol, not a backtick --
+  // confirmed live 2026-08-29 on the PROG page's BRG/DIST field
+  // (cont4w = " ---`  /----.-", i.e. "---°/----.-").
+  const text = bytesToUtf8(base64ToBytes(b64 ?? ""))
+    .replace(/\0+$/, "")
+    .replace(/`/g, "°");
+  return Array.from(text);
 }

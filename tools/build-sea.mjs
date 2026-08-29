@@ -50,6 +50,7 @@ const ASSETS = [
   "fonts/B612Mono-Regular.ttf",
   "fonts/OFL.txt",
   "config/profiles/default-fms.json",
+  "config/profiles/mcdu-toliss-airbus.json",
   "config/profiles/b738-fms.json",
   "config/profiles/efis-a333.json",
   "config/profiles/efis-toliss-airbus.json",
