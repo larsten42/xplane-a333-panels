@@ -7,6 +7,11 @@ repo, then open a **Pull Request** (PR) asking to merge them in. Nothing
 lands in the real project until that PR is reviewed and merged — so there's
 no way to "break" anything by trying.
 
+Want to verify a specific profile against real hardware you have access
+to? [`docs/toliss-a340/VERIFYING-RMP-ACP.md`](docs/toliss-a340/VERIFYING-RMP-ACP.md)
+is a ready-made checklist for the ToLiss Airbus RMP+ACP profile — what to
+test, and which field to edit for each item.
+
 There are two ways to do this, depending on what you're changing.
 
 ## Option A — small edits, straight from the browser (no installs)

@@ -30,6 +30,23 @@
 //     just changes what the display shows, confirmed live — firing
 //     sim/autopilot/trkfpa doesn't move any autopilot-status dataref) —
 //     still gets a resolved command to press, just no lit-state tracking.
+//   - `writeToggle: true` instead of a `command`: for buttons with no
+//     dedicated toggle command at all, only a plain writable stateDataref
+//     (e.g. ToLiss's AirbusFBW/RMP1Switch for RMP power — confirmed live
+//     2026-08-30: no command exists anywhere in the aircraft's command
+//     list, but the dataref itself is directly writable and a write
+//     produces a real, visible effect). press() writes the opposite of
+//     the button's current lit state directly to stateDataref instead of
+//     firing a command — same invert handling as the read side, so a
+//     future inverted writeToggle button still writes the raw value that
+//     produces the intended lit state.
+//   - `stateIndex`: for a button whose lit state lives at one element of
+//     an array dataref rather than being its own scalar (e.g. ToLiss's
+//     AirbusFBW/DRAIMS/NavBackupMode[0] for the RMP's backup-nav "NAV"
+//     master key — confirmed live 2026-08-30). Combines with `litValue`/
+//     `invert` exactly like a scalar stateDataref would; only the read
+//     path differs (subscribeDataref's own `index` param, see
+//     _connectButton()).
 
 import { READOUT_FORMATS, READOUT_STEP_SIZES } from "./readout-formats.js";
 
@@ -60,6 +77,8 @@ export class EfisAdapter {
     this._commandIds = new Map();
     /** @type {Map<string, {on: number[], off: number[]}>} button name -> resolved command ids for buttons with onCommands/offCommands instead of a single command */
     this._onOffCommandIds = new Map();
+    /** @type {Map<string, number>} button name -> resolved stateDataref id, for buttons with writeToggle:true instead of a command (see this file's own top comment) */
+    this._writeToggleIds = new Map();
     /** @type {Set<string>} same keys as above, present in the profile but unresolved on this sim */
     this.unresolved = new Set();
     /** @type {Set<string>} "readoutName.valueKey" currently under active local drag control — see beginAdjust()/endAdjust() */
@@ -125,7 +144,14 @@ export class EfisAdapter {
       }
     }
 
-    if (button.onCommands && button.offCommands) {
+    if (button.writeToggle) {
+      if (drId == null) {
+        console.warn(`[efis-adapter] button "${button.name}": writeToggle:true needs a stateDataref. Button will be disabled.`);
+        this.unresolved.add(button.name);
+        return;
+      }
+      this._writeToggleIds.set(button.name, drId);
+    } else if (button.onCommands && button.offCommands) {
       const onIds = button.onCommands.map((name) => commandIds.get(name));
       const offIds = button.offCommands.map((name) => commandIds.get(name));
       if (onIds.some((id) => id == null) || offIds.some((id) => id == null)) {
@@ -148,6 +174,12 @@ export class EfisAdapter {
 
     this.state.set(button.name, false);
     if (drId == null) return;
+    // stateIndex is for a button whose lit state lives at one element of
+    // an array dataref (e.g. ToLiss's AirbusFBW/DRAIMS/NavBackupMode[0])
+    // rather than being its own scalar — subscribeDataref's own `index`
+    // param narrows the callback to just that element, delivered as a
+    // one-element array, so raw[0] rather than raw is read below.
+    const index = button.stateIndex != null ? [button.stateIndex] : undefined;
     this.client.subscribeDataref(drId, (raw) => {
       // Some of these datarefs animate smoothly between 0 and 1 (X-Plane's
       // own light-fade transition) rather than flipping instantly — a
@@ -157,11 +189,11 @@ export class EfisAdapter {
       // different case of several buttons sharing one dataref (e.g.
       // AP1/AP2 on the same autopilot_12_status) — there, "lit" means an
       // exact match, not a threshold.
-      const value = Number(raw);
+      const value = Number(index ? raw?.[0] : raw);
       const lit = button.litValue != null ? Math.round(value) === button.litValue : button.invert ? value < 0.5 : value >= 0.5;
       this.state.set(button.name, lit);
       this.onStateChange?.(button.name);
-    });
+    }, index);
   }
 
   _connectReadout(readout, commandIds, datarefIds) {
@@ -295,6 +327,16 @@ export class EfisAdapter {
     if (onOff) {
       const ids = this.isLit(name) ? onOff.off : onOff.on;
       for (const id of ids) this.client.activateCommand(id);
+      return true;
+    }
+    const writeToggleId = this._writeToggleIds.get(name);
+    if (writeToggleId != null) {
+      // Mirrors the read side's invert handling in _connectButton() above
+      // (lit = invert ? raw<0.5 : raw>=0.5) so writing here produces
+      // exactly the intended next lit state regardless of polarity.
+      const button = (this.profile.buttons ?? []).find((b) => b.name === name);
+      const wantLit = !this.isLit(name);
+      this.client.setDatarefValue(writeToggleId, button?.invert ? (wantLit ? 0 : 1) : wantLit ? 1 : 0);
       return true;
     }
     const id = this._commandIds.get(name);
@@ -509,7 +551,7 @@ export class EfisAdapter {
   }
 
   isAvailable(name) {
-    return this._commandIds.has(name) || this._onOffCommandIds.has(name);
+    return this._commandIds.has(name) || this._onOffCommandIds.has(name) || this._writeToggleIds.has(name);
   }
 
   /**

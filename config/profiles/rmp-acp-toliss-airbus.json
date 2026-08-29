@@ -2,27 +2,33 @@
   "id": "toliss-airbus-rmp-acp",
   "aircraft": "ToLiss Airbus (AirbusFBW namespace)",
   "side": "captain",
-  "label": "ToLiss Airbus RMP1 + ACP1 — VHF1/VHF2 only",
-  "description": "Dataref/command mapping for the ToLiss Airbus add-on's RMP1 (Captain's Radio Management Panel) and ACP1 (Captain's Audio Control Panel), under the AirbusFBW/ namespace. Scoped to VHF1/VHF2 (COM1/COM2) for now, matching config/profiles/rmp-acp-a333.json's own first-pass scope. See docs/toliss-a340/{datarefs,commands}.txt for the source dataref/command listing this was built from, and _note_provenance below.",
+  "label": "ToLiss Airbus RMP1 + ACP1",
+  "description": "Dataref/command mapping for the ToLiss Airbus add-on's RMP1 (Captain's Radio Management Panel) and ACP1 (Captain's Audio Control Panel), under the AirbusFBW/ namespace. RMP covers VHF1/VHF2/VHF3, HF1/HF2, and the STBY NAV backup functions VOR/LS/ADF -- see _note_on_channel_select. ACP covers transmit-select (MIC_*) for VHF1/VHF2/VHF3/HF1/HF2/INT/CAB/PA and listen-toggle lamps for all of those plus LS/MKR/VOR1/VOR2/ADF1/ADF2 -- see _note_on_mic_lights and _note_on_listen_state. See docs/toliss-a340/{datarefs,commands}.txt for the source dataref/command listing this was built from, and _note_provenance below.",
 
-  "_note_provenance": "NOT live-verified — deduced entirely from name-matching against docs/toliss-a340/datarefs.txt and commands.txt (a supplied name listing, no types/values/writability metadata at all -- same starting point efis-toliss-airbus.json was built from). Every entry below should be confirmed with tools/discover.mjs against a real running ToLiss Airbus before trusting it, especially the two _gap_* items and the litValue guesses, which have no confirmed basis at all beyond a plausible-looking name.",
-  "_note_on_architecture": "ToLiss's RMP1 datarefs (RMP1Freq/RMP1StbyFreq) look like the RMP's own currently-displayed value, not independent per-channel storage the way the stock A330's RTP is (a routing layer over separate com1_standby_frequency_hz_833/com2_standby_frequency_hz_833 datarefs -- see rmp-acp-a333.json's _note_on_tuning). No separate underlying COM1/COM2 dataref was found in the supplied listing at all. Because of this, COM1 and COM2 below intentionally point at the exact same RMP1Freq/RMP1StbyFreq datarefs and the exact same RMP1FreqUp/DownLrg/Sml commands -- there is only one RMP1 display/tune surface here, shared across whichever channel VHF1Capt/VHF2Capt last selected, which is also exactly how src/rmp-panel.js already scopes tuning input to whichever channel is currently selected. This should behave correctly in practice (turning the knob only ever affects the channel actually selected on the real RMP), it just means 'COM1' and 'COM2' as modeled here aren't independently-persisted the way the stock profile's are.",
-  "_note_on_tuning": "RMP1Freq/RMP1StbyFreq's writability isn't confirmed, and even if writable, what validation (rounding to a real 8.33kHz channel, rejecting out-of-range values, ...) a direct write would get is unknown -- unlike the stock A330's standby datarefs, confirmed live to accept a direct write cleanly. So no encoder.writeDataref here; instead each COM readout declares commands.coarseUp/coarseDown/fineUp/fineDown (RMP1FreqUpLrg/DownLrg for coarse -- 'Lrg' read as large/MHz steps -- RMP1FreqUpSml/DownSml for fine/kHz steps), and src/rmp-panel.js's tune knob falls back to firing those directly, one press per detent, when a readout has no writable encoder (see that file's own top comment). This also sidesteps needing to reproduce ToLiss's real step sizes/grid/wraparound locally the way radio-panel.js's nextStandbyRaw() does for the stock aircraft -- the sim owns all of that on this path.",
-  "_note_on_display_scale": "RMP1Freq/RMP1StbyFreq are assumed to be plain float MHz values (e.g. 118.505), unlike the stock A330's _833 datarefs which already come out pre-scaled as a 6-digit integer (118505) -- going by naming convention only, not confirmed. displayScale:1000 below tells src/rmp-panel.js's syncDisplay() to scale before rendering; if RMP1Freq actually already comes out as an integer, this would show a garbled/oversized number and displayScale should be removed.",
-  "_note_on_channel_select": "RMP1SelFunc looks like an enum for which function the RMP is currently displaying (VHF1/VHF2/VHF3, plus presumably the BackupNav modes -- see RMP1/BackupNav*Press commands, not wired here, out of VHF1/VHF2 scope same as the stock profile's own STBY NAV row). litValue 0/1 for VHF1/VHF2 below is a plausible-ordering guess with no other basis -- if wrong, the practical effect is limited: COM1/COM2 alias the same dataref anyway (see _note_on_architecture), so a wrong guess would just leave the channel-select caret not highlighting correctly, not lose or misdirect any actual data.",
-  "_gap_rtp_power": "No RMP power on/off command was found in the supplied command listing at all (only RMPPowerAnim, a dataref, presumably a visual-only animation position). Left entirely unwired rather than guessed -- src/rmp-panel.js's power-lever wiring already no-ops cleanly when a profile has no RTP_POWER button (see its own isAvailable() guards), so this isn't a hardcoded assumption anywhere.",
-  "_gap_mic_state": "ACP1/VHF1Press and ACP1/VHF2Press (transmit-select) are confirmed by name, but ACP1Switch -- the only plausible state dataref nearby -- gives no indication from its name alone of its shape (a single enum? a bitmask? does it also cover the reception/listen side, combined?). Wiring a wrong-shaped exact-match guess here risks a MIC button that never lights (best case, cosmetic) or reads a real mutual-exclusivity state incorrectly (worse). Left as command-only (no stateDataref) rather than guessed -- pressing still works, there's just no lit feedback yet.",
-  "_gap_acp_volume": "No per-channel ACP reception volume dataref was found in the supplied listing (ACP1RotaryPositions is a plausible candidate by name, but its shape -- array vs per-channel, value range, writability -- is completely unconfirmed). VOL_VHF1/VOL_VHF2 are omitted entirely rather than wired against a guess with zero basis; src/rmp-panel.js already skips wiring the ACP volume knobs cleanly when a profile doesn't declare them.",
-  "_gap_listen_state": "ListenVHF1/ListenVHF2 (commands) are confirmed by name and wired below via listenToggles, but no corresponding state dataref was found at all (AudioSwitching is the only remotely plausible name nearby, with no confirmation it's even related). Tapping the ACP knob still fires the real command, it just never lights the lamp -- see src/rmp-panel.js's wireListenToggles(), which already tolerates a listenToggles entry with no stateDataref for exactly this case.",
+  "_note_provenance": "Started as a first pass deduced entirely from name-matching against docs/toliss-a340/datarefs.txt and commands.txt (a supplied name listing, no types/values/writability metadata at all -- same starting point efis-toliss-airbus.json was built from), NOT live-verified. Since then, tuning, channel select (across every mode listed in _note_on_channel_select, not just VHF1/VHF2), frequency display, ACP volume, RMP power, MIC transmit-select lit state, and listen-toggle lit state (extended well beyond VHF1/VHF2) have all been confirmed live 2026-08-29/30 against a running ToLiss Airbus -- see docs/toliss-a340/VERIFYING-RMP-ACP.md for what's still open.",
+  "_note_on_architecture": "ToLiss's RMP1 acts as a single display/tune surface shared across whichever channel was last selected, not independent per-channel storage the way the stock A330's RTP is -- confirmed live 2026-08-29/30 across every mode in _note_on_channel_select. Because of this, every readout below (COM1/COM2/VHF3/HF1/HF2/NAV_VOR/NAV_LS/NAV_ADF) intentionally points at the exact same dataref pair and the exact same RMP1FreqUp/DownLrg/Sml commands, exactly how src/rmp-panel.js already scopes tuning input to whichever channel is currently selected (turning the knob only ever affects the channel actually selected on the real RMP). None of these readout names are independently-persisted the way the stock profile's COM1/COM2 are -- they're really just 'the one RMP1 display, currently showing channel X'.",
+  "_note_on_window_string": "IMPORTANT, found 2026-08-30 (superseding an earlier fix that read sim/cockpit2/radios/actuators/com1_..._833 -- see git history if that reasoning is ever needed again): AirbusFBW/RMP1/ActiveWindowString and .../StandbyWindowString are pre-formatted display strings (base64+NUL-terminated ASCII, same convention as the MCDU screen text -- see mcdu-adapter.js) that work identically across *every* RMP1 mode, confirmed live for VHF1 ('118.630'), VHF2 ('135.005'), VHF3 (' dAtA ' -- VHF3 is ToLiss's datalink/ACARS radio, no voice frequency to show on the active side, but the standby side still shows a real tunable frequency), HF1/HF2 ('  2.500', space-padded since HF's 1-2 digit MHz values are narrower than VHF's 3), and the STBY NAV backup functions VOR ('113.000' active, ' C/000' standby -- a channel/course indicator, not a frequency at all) / LS (same shape as VOR) / ADF ('   210' -- a whole kHz value, no decimal point at all). This is a strictly better source than the com1_..._833 fix it replaces: that only worked for VHF because X-Plane's core sim only simulates VHF COM radios at all (confirmed live: HF1Capt changed AirbusFBW/RMP1Freq to a real HF frequency but never touched com1_..._833), so extending to HF/backup-nav would have needed per-mode dataref discovery and per-mode number formatting (backup-nav's course indicator and ADF's no-decimal shape can't be represented as a scaled number at all). Reading the window string directly needs none of that -- see src/rmp-panel.js's paintWindowString() for how it's rendered (extracting the decimal point's position, or omitting it entirely, straight from the string itself rather than assuming a fixed shape). Side effect, fixed 2026-08-30: bypassing rmp.setFreq() left vendor/rmp.js's own transfer key (which does its own optimistic local swap-and-repaint from its internal freq[] array on click) permanently frozen at its construction-time default, briefly flashing '121.825'/'126.375' on every physical swap-key press before this profile's real values reappeared a moment later -- see src/rmp-panel.js's syncDisplay() for the fix (also feeding setFreq() a numeric approximation of the window string, purely so that stale optimistic repaint shows something reasonable).",
+  "_note_on_tuning": "This profile's frequency datarefs' writability under ToLiss specifically isn't confirmed (the stock A330's own equivalent datarefs *are* confirmed directly writable, but ToLiss's plugin might not expect or honor an external write) -- so no encoder.writeDataref anywhere here; every readout below declares commands.coarseUp/coarseDown/fineUp/fineDown (RMP1FreqUpLrg/DownLrg for coarse -- 'Lrg' read as large/MHz steps -- RMP1FreqUpSml/DownSml for fine/kHz steps), and src/rmp-panel.js's tune knob falls back to firing those directly, one press per detent, when a readout has no writable encoder (see that file's own top comment). This also sidesteps needing to reproduce ToLiss's real step sizes/grid/wraparound locally the way radio-panel.js's nextStandbyRaw() does for the stock aircraft -- the sim owns all of that on this path. Not independently verified for the STBY NAV backup modes (VOR/LS/ADF) beyond confirming the same commands do change their displayed values live -- reasonable given it's the same single tune surface, but not separately walked through a full grid/wraparound check the way COM's own 8.33kHz-ish grid was.",
+  "_note_on_833_grid": "Live-verified 2026-08-29 (walked RMP1FreqUpSml 20x from a known start, logging the raw AirbusFBW/RMP1StbyFreq float after each press): ToLiss's own *internal* fine step for VHF is 6.25kHz (1/160 MHz) per press, e.g. ...893.75, 900.00, 906.25, 912.50, 918.75, 925.00... This internal value used to matter a lot here (an earlier, now-reverted fix read it directly and had to work around its float32 noise and non-5kHz grid) -- since _note_on_window_string, this profile reads the pre-formatted display string instead, which already reflects whatever ToLiss's own display logic actually shows, so this note is now historical context rather than load-bearing. Also observed, unrelated to this app: crossing an exact MHz boundary via the fine ring (e.g. ...993.75 -> next press) sometimes reset AirbusFBW/RMP1StbyFreq to the *same* MHz's .000 instead of carrying into the next MHz (123.99375 -> 123.000, not 124.000) -- looks like a ToLiss-side carry bug in RMP1FreqUpSml, not reachable via the coarse ring, and out of scope to work around here.",
+  "_note_on_channel_select": "RMP1SelFunc is the enum for which function RMP1 is currently displaying/tuning -- confirmed live 2026-08-29/30 by toggling every select command below in turn and watching RMP1SelFunc flip to an exact, stable value each time, with the displayed frequency changing to match: VHF1=0, VHF2=1, VHF3=2, HF1=3, HF2=4, [VOR backup-nav]=6, [LS/ILS backup-nav]=7, [ADF backup-nav]=9 (8 was never observed -- possibly MLS or another mode this profile doesn't cover). AM (AirbusFBW/AMCapt, a real command with a real UI button) was confirmed live to leave RMP1SelFunc completely unchanged no matter what channel was selected before pressing it -- not a separate channel, but it does have its own real state, see AM_PRESS below and _note_on_am. The STBY NAV 'NAV' master key (AirbusFBW/RMP1/BackupNavPress) never moves RMP1SelFunc on its own -- it has its own, separate state, see NAV_PRESS below and _note_on_nav_backup_mode. BFO (AirbusFBW/RMP1/BackupNavBFOPress) never changed RMP1SelFunc either -- also has its own, separate state, see BFO_PRESS below and _note_on_bfo.",
+  "_note_on_am": "Resolved 2026-08-30 -- AM never moves RMP1SelFunc (confirmed live, see above), so it was initially assumed to be a genuine dead end and wired command-only, same as the (still-unresolved) MIC transmit-select buttons. AirbusFBW/RMP1Lights[6] is the real one: a user directly toggled the real AM switch while HF2 was selected and supplied the full array before/after -- off=[0.8,0,0,0,0,1,0,0,0,0,0,1,1,1,0,0], on=[0.8,0,0,0,0,1,1,0,0,0,0,1,1,1,0,0] -- exactly index 6 differs (index 5 stays 1 throughout, confirming HF2 itself stays selected). This confirms AM is a *mode* on top of whichever HF channel is currently selected (AM vs. SSB reception, a real distinction on real HF radios), not a separate channel -- matching real-world HF radio behavior, and matching why RMP1SelFunc never needed to move for it. AM_PRESS itself stays command-only (no stateDataref) -- its lit state is read via the shared RMP1_LIGHTS readout instead. Why: subscribeDataref() only sends one actual subscribe request per dataref id, so AM_PRESS and BFO_PRESS each declaring their own stateIndex against the *same* AirbusFBW/RMP1Lights id (as originally shipped) silently broke each other and the RMP1_LIGHTS readout -- confirmed live 2026-08-30 when RMP1_LIGHTS came back as a one-element array instead of the full 16. src/rmp-panel.js reads index 6 directly off the one shared array instead. Not confirmed whether index 6 means the same thing while HF1 (rather than HF2) is selected -- only tested against HF2 -- but there's no reason to expect otherwise since it's the same shared RMP1 display surface.",
+  "_note_on_sel_indicator": "The round 'SEL' indicator (vendor/rmp.js's setSel(), between HF1/HF2 -- not to be confused with any of the per-channel carets) has been through four attempts, none independently confirmed live against the real cockpit yet -- this is the current one, current as of 2026-08-30, not a settled fact. History, so the next attempt (if this one's also wrong) doesn't repeat any of them: (1) lit whenever a recognized channel is selected AND the RMP is powered -- wrong. (2) RMP1Lights[13], derived from a cross-comparison that looked convincing (1 for every normal selection, 0 only in one ambiguous backup-nav moment) but was a coincidental correlation, not causal -- wrong. (3) annunciator_sel1 = (RMP1SelFunc == RMP2SelFunc) || (RMP1SelFunc == RMP3SelFunc), given directly by a user as 'this kind of logic' -- tried live by that same user and also wrong, reason unconfirmed. (4) current: AirbusFBW/RMP1Lights_Raw -- a *different* dataref from RMP1Lights (both exist, confirmed live, both 16-element float_arrays with different values), '4th from Right' per the user, i.e. index 12 of 16 (indices 15/14/13/12 counted as 1st/2nd/3rd/4th from the right). RMP1_LIGHTS_RAW above exposes the whole array; src/rmp-panel.js reads index 12 directly with the plain default threshold (value >= 0.5). Explicitly not yet cross-checked against the real cockpit -- if wrong, get a live on/off pair the way AM/BFO were confirmed (toggle whatever causes another RMP to actually contend for this function, diff the full RMP1Lights_Raw array, don't reason from a single snapshot).",
+  "_note_on_bfo": "Resolved 2026-08-30 -- a live report that the BFO caret didn't match ToLiss's own panel led back to AirbusFBW/RMP1Lights, a 16-element float_array (index 0 is a constant 0.8 across every mode tried, plausibly a brightness/dimming level, not a caret). A user directly toggled the real BFO switch and supplied the full array before/after: off=[0.8,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0], on=[0.8,0,0,0,0,0,0,0,0,0,1,1,0,1,0,0] -- exactly one index differs, index 11 (0=off, 1=on), confirming it unambiguously without needing to reverse-engineer the rest of the array's layout. BFO_PRESS itself stays command-only (no stateDataref) -- see _note_on_am for why (subscribeDataref() only supports one index-shape per dataref id; BFO_PRESS declaring its own stateIndex against the same AirbusFBW/RMP1Lights id that AM_PRESS and the RMP1_LIGHTS readout also need broke all three, confirmed live 2026-08-30). src/rmp-panel.js reads index 11 directly off the one shared RMP1_LIGHTS array instead, and drives 'bfo''s caret directly via rmp.setCaret() (not through selectChannel()), since BFO can be on or off independently of whichever VOR/LS/ADF submode is otherwise selected. Note index 11 isn't a *stable* single-purpose lamp the way index 6 (AM) is -- it reads 1 for ordinary VHF/HF/AM selections too, and only tracks BFO specifically while already in ADF backup-nav mode (RMP1Lights' indices appear multiplexed/reused across the normal-channel-row and backup-nav-row 'pages') -- harmless in practice since BFO's own caret is only meaningful while in that mode anyway, but worth knowing if this index is ever revisited. (An earlier version of this note also cited index 13 as a stable 'SEL' indicator -- wrong, see _note_on_sel_indicator; SEL turned out to be unrelated to RMP1Lights entirely.)",
+  "_note_on_nav_backup_mode": "Resolved 2026-08-30 -- a live report that 'the backup nav LEDs are not working properly' turned out to be a real, distinct gap: NAV_PRESS previously had no stateDataref at all (command-only, like AM/BFO), so the RMP's 'NAV' master key caret never lit regardless of state. AirbusFBW/DRAIMS/NavBackupMode is a 2-element int_array; index 0 is a clean, repeatedly-confirmed binary toggle that flips exactly when BackupNavPress is pressed. litValue was initially guessed as 0 (assumed '0 = backup nav engaged, light it') and shipped inverted -- caught by a live cross-check against the real cockpit: with NavBackupMode reading [1,0] and RMP1SelFunc/the displayed frequency both confirming completely normal VHF1 operation (not backup nav), the real NAV caret was independently confirmed lit at that exact moment. So value 1, not 0, is the lit state -- litValue:1 below is correct as of this fix. (The real-world reason index 0 works this way -- e.g. it may reflect something like 'guard/lid down' rather than 'backup nav engaged' -- isn't confirmed; only the polarity needed for a correct caret is.) NAV_PRESS declares stateDataref/stateIndex/litValue against this. On a real RMP, the NAV master lamp and whichever specific VOR/LS/ADF submode is active light *simultaneously* (two independent lamps, not a mutually-exclusive selection) -- src/rmp-panel.js drives NAV's caret directly via rmp.setCaret() rather than through selectChannel() (which only ever marks one caret 'selected' at a time) for exactly this reason. Index 1 of NavBackupMode was 0 in every sample taken and its meaning wasn't determined. Separately, VOR/LS/ADF submode selection itself was fully reliable in earlier testing (see _note_on_channel_select) but did not reproduce via synthetic command presses in a later session -- unclear whether that's a real ToLiss quirk/precondition or an artifact of scripted testing; not changed here since there's no evidence the reading mechanism (RMP1SelFunc litValue) itself is wrong, only that a retest couldn't trigger a transition to check it again. AirbusFBW/RMP1Lights (a 16-element float_array, index 0 constantly 0.8 regardless of state, plausibly a brightness/dimming level rather than a caret) was also suggested as a candidate source for caret state but wasn't used here -- NavBackupMode's index 0 was simpler and already fully confirmed for what was actually broken (the NAV master lamp).",
+  "_note_on_hf1_caveat": "A live report said the physical HF1 button 'doesn't seem to work' in ToLiss's own cockpit. This profile's own live testing (firing AirbusFBW/HF1Capt directly via the same command X-Plane's API exposes to any button press) shows it *does* work -- RMP1SelFunc reliably reads 3 and the display shows a real HF frequency afterward. If the physical 3D click-spot in ToLiss's cockpit is unresponsive, that looks like a ToLiss-side hit-testing issue rather than anything wrong with the command/dataref itself, and isn't something this app can work around -- src/rmp-panel.js's own HF1 button fires the exact same command a working physical press would.",
+  "_note_on_rtp_power": "Resolved 2026-08-30 -- was previously a gap (no power command was found anywhere in the supplied command listing at all, only RMPPowerAnim, a dataref, presumably a visual-only animation position). AirbusFBW/RMP1Switch is the real one: confirmed live to be a directly writable int dataref (0/1) with no dedicated command anywhere -- writing 0 then 1 back produced a real, visible effect (RMP1Freq read a non-frequency sentinel value while off, a real frequency again once back on). Since there's no command to press at all, RTP_POWER below uses the new writeToggle:true button shape (see efis-adapter.js's own top comment) instead of a command -- press() writes the opposite of the current lit state straight to stateDataref.",
+  "_note_on_mic_lights": "Resolved 2026-08-30 -- was previously a gap (ACP1Switch, the only candidate tried live 2026-08-29, confirmed to not change at all when pressing VHF1Press/VHF2Press). AirbusFBW/ACP1Lights_Raw is the real one, a 16-element float_array -- but its index order is NOT simply the VHF1..PA channel list in sequence, confirmed the hard way: firing every ACP1/*Press command in isolation (clean baseline, one command, dump, repeat) found index 0=VHF1, 1=VHF2, 3=HF1, 4=HF2, 5=INT, 6=CAB, and critically 9=PA -- not 15, which is where a first pass (assuming the channel list order given -- VHF1/VHF2/VHF3/HF1/HF2/INT/CAB/LS/MKR/VOR1/VOR2/ADF1/ADF2/SAT1/SAT2/PA -- applied directly to array position) had put it. VHF3Press never moved any index at all, tried twice with a longer press duration and wait -- plausibly correct rather than broken, since ToLiss's VHF3 is a datalink/ACARS channel (see efis-toliss/rmp-acp-toliss-airbus.json's own VHF3 notes) with no voice transmission to select, so index 2 (assumed by position, never actually confirmed) is used anyway since it can't matter -- always reads unlit regardless of which index is picked. Indices 7/8/10/11/12/13/14 (presumably LS/MKR/VOR2/ADF1/ADF2/SAT1/SAT2 by the channel list, but given index 9 already broke that assumption, NOT trusted without their own direct confirmation) aren't wired for MIC at all -- no UI slot exists for most of them anyway (vendor/rmp.js's ACP_TOP row only has CALL keys for vhf1/vhf2/vhf3/hf1/hf2/int/cab). MIC_VHF1/VHF2/VHF3/HF1/HF2/INT/CAB/PA below are all plain command-only buttons (no stateDataref at all) -- their lit state is read via the ACP1_LIGHTS_RAW readout instead and applied directly in src/rmp-panel.js (see its own MIC_LIGHT_INDEX), the same pattern (and for the same reason) as AM_PRESS/BFO_PRESS's own fix: declaring a stateDataref/stateIndex on each of 8 buttons sharing this one array id would silently break every one of them but the first to connect (see xplane-client.js's subscribeDataref() and ARCHITECTURE.md's RMP+ACP section for the full story of that bug).",
+  "_note_on_acp_volume": "Resolved 2026-08-30 -- was previously a gap (ACP1RotaryPositions, the only candidate found in the supplied listing, had a completely unconfirmed shape). VOL_VHF1/VOL_VHF2 below use the plain sim/cockpit2/radios/actuators/audio_volume_com1/com2, confirmed live: plain 0.0-1.0 floats, is_writable:true, and fractional writes round-trip correctly (0.55 written, 0.55 read back) -- unlike rmp-acp-a333.json's own volume_pos_0/1, whose _gap_acp_volume_write documents fractional writes failing outright on that dataref. Mapped VOL_VHF1->com1/VOL_VHF2->com2 rather than following the RMP1-alias-one-surface model (_note_on_architecture) -- unlike RMP tuning, a real ACP has one independent physical volume knob per radio regardless of which one the RMP is currently displaying, and these two datarefs are genuinely independent (each moves without affecting the other). Not extended to VHF3/HF1/HF2 -- no equivalent generic volume dataref confirmed for those yet.",
+  "_note_on_listen_state": "Resolved 2026-08-30, then extended the same day. AudioSwitching (tried first) never tracked this at all. AirbusFBW/DRAIMS1/ListenStates (used next) was a real, working 10-element array (order VHF1, VHF2, VHF3, HF1, HF2, INT, CAB, LS, MKR, VOR1), confirmed live for VHF1/VHF2 -- but AirbusFBW/ACP1KnobPush turned out to be a strict superset: a writable(!) 16-element int_array in the exact same VHF1..PA order as ACP1Lights_Raw (see _note_on_mic_lights), confirmed live to mirror ListenStates exactly in lockstep for VHF1/VHF2 while also covering VHF3/VOR2/ADF1/ADF2/SAT1/SAT2/PA that ListenStates doesn't. Direct writes to it were tried (the natural next step, since it's writable) and confirmed NOT supported by X-Plane's Web API for a single array element -- 'dataref_set_values' rejects a partial-array write with 'incompatible_data', needing the whole array's worth of values at once -- so this still goes through commands where one exists (ListenVHF1/2/3, the only Listen* commands found live) and stays read-only everywhere else. listenToggles below switched from ListenStates to ACP1KnobPush and extended to hf1/hf2/int/cab/ls/mkr/vor1/vor2/adf1/adf2 (indices 3-12) -- all command-less (no Listen{X} command exists for any of them), so tapping those knobs currently does nothing but the lamp still reflects real state. int/cab specifically: confirmed live 2026-08-30 (a report that toggling them from the web UI 'doesn't seem to affect the ToLiss state') that ACP1KnobPush[5]/[6] are permanently 1 -- tried firing ACP1/INTPress and ACP1/CABPress (the only remotely-plausible commands, already used for MIC_INT/MIC_CAB) repeatedly and neither index ever moved. This isn't a missing command to find -- INT/CAB genuinely have no listen toggle on this ACP model at all, matching DRAIMS1/ListenStates' own INT slot defaulting to 1 with no way to change it either (see the original version of this note, and real intercom/cabin-call channels on actual aircraft, which are typically always-monitored with no independent mute). The lamp correctly shows 'always on' -- there's nothing to fix here, and no command search will find one. pa (index 15) and sat1/sat2 (13/14) aren't wired -- PA's a transmit/announce function, not really a 'listen' toggle, and SAT has no UI slot at all (see _note_on_mic_lights).",
 
   "readouts": [
     {
       "name": "COM1",
       "format": "raw",
-      "displayScale": 1000,
+      "windowString": true,
       "datarefs": {
-        "active": "AirbusFBW/RMP1Freq",
-        "standby": "AirbusFBW/RMP1StbyFreq"
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
       },
       "commands": {
         "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
@@ -35,16 +41,150 @@
       "name": "COM2",
       "_note": "Intentionally identical to COM1 above -- see _note_on_architecture.",
       "format": "raw",
-      "displayScale": 1000,
+      "windowString": true,
       "datarefs": {
-        "active": "AirbusFBW/RMP1Freq",
-        "standby": "AirbusFBW/RMP1StbyFreq"
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
       },
       "commands": {
         "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
         "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
         "fineUp": "AirbusFBW/RMP1FreqUpSml",
         "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "VHF3",
+      "_note": "Intentionally identical to COM1 above -- see _note_on_architecture. Active window shows ' dAtA ' (VHF3 is ToLiss's datalink/ACARS radio, no voice frequency) while standby still shows a real tunable frequency -- both render fine through paintWindowString(), no special-casing needed.",
+      "format": "raw",
+      "windowString": true,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "HF1",
+      "_note": "Intentionally identical to COM1 above -- see _note_on_architecture. See _note_on_hf1_caveat re: a live report that the physical HF1 button doesn't respond in ToLiss's own cockpit -- the command itself is confirmed working via this app.",
+      "format": "raw",
+      "windowString": true,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "HF2",
+      "_note": "Intentionally identical to COM1 above -- see _note_on_architecture.",
+      "format": "raw",
+      "windowString": true,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "NAV_VOR",
+      "_note": "Intentionally identical to COM1 above -- see _note_on_architecture. Standby window shows a channel/course indicator (e.g. ' C/000'), not a frequency -- paintWindowString() renders it best-effort (the '/' has no seven-segment glyph and shows as a blank digit).",
+      "format": "raw",
+      "windowString": true,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "NAV_LS",
+      "_note": "Intentionally identical to COM1 above -- see _note_on_architecture. Vendor UI's own button id for this is 'ls' (labeled LS) even though the real command/mode is ILS -- see CHANNEL_TO_BAND in src/rmp-panel.js.",
+      "format": "raw",
+      "windowString": true,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "NAV_ADF",
+      "_note": "Intentionally identical to COM1 above -- see _note_on_architecture. Both windows show a whole kHz value with no decimal point at all (e.g. '   210') -- paintWindowString() omits the decimal point entirely when the source string has none.",
+      "format": "raw",
+      "windowString": true,
+      "datarefs": {
+        "active": "AirbusFBW/RMP1/ActiveWindowString",
+        "standby": "AirbusFBW/RMP1/StandbyWindowString"
+      },
+      "commands": {
+        "coarseUp": "AirbusFBW/RMP1FreqUpLrg",
+        "coarseDown": "AirbusFBW/RMP1FreqDownLrg",
+        "fineUp": "AirbusFBW/RMP1FreqUpSml",
+        "fineDown": "AirbusFBW/RMP1FreqDownSml"
+      }
+    },
+    {
+      "name": "RMP1_LIGHTS",
+      "_note": "The whole raw AirbusFBW/RMP1Lights array, fetched as a plain readout rather than through the buttons model -- src/rmp-panel.js indexes into it directly for AM/BFO (readout.datarefs.value comes through with no `index` requested, so it's the full 16-element array, not narrowed to one element the way stateIndex-based buttons are).",
+      "format": "raw",
+      "datarefs": { "value": "AirbusFBW/RMP1Lights" }
+    },
+    {
+      "name": "RMP1_LIGHTS_RAW",
+      "_note": "The whole raw AirbusFBW/RMP1Lights_Raw array -- a *different* dataref from RMP1Lights above, not just an alias -- fetched as its own readout for the same reason RMP1_LIGHTS is (src/rmp-panel.js indexes into it directly; no `index` requested here, so it's the full array). See _note_on_sel_indicator.",
+      "format": "raw",
+      "datarefs": { "value": "AirbusFBW/RMP1Lights_Raw" }
+    },
+    {
+      "name": "ACP1_LIGHTS_RAW",
+      "_note": "The whole raw AirbusFBW/ACP1Lights_Raw array (16 elements -- NOT simply the VHF1..PA channel list in array-position order, confirmed the hard way, see _note_on_mic_lights for the per-index breakdown and how PA's real index (9) was found). Fetched as a whole-array readout, not per-button stateIndex, for the same subscription-conflict reason as RMP1_LIGHTS -- see _note_on_mic_lights. src/rmp-panel.js indexes into it directly (its own MIC_LIGHT_INDEX) to drive MIC_VHF1..MIC_PA's LEDs.",
+      "format": "raw",
+      "datarefs": { "value": "AirbusFBW/ACP1Lights_Raw" }
+    },
+    {
+      "name": "VOL_VHF1",
+      "format": "raw",
+      "datarefs": { "value": "sim/cockpit2/radios/actuators/audio_volume_com1" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/audio_volume_com1",
+        "valueKey": "value",
+        "stepValue": 1
+      }
+    },
+    {
+      "name": "VOL_VHF2",
+      "format": "raw",
+      "datarefs": { "value": "sim/cockpit2/radios/actuators/audio_volume_com2" },
+      "encoder": {
+        "writeDataref": "sim/cockpit2/radios/actuators/audio_volume_com2",
+        "valueKey": "value",
+        "stepValue": 1
       }
     }
   ],
@@ -63,8 +203,64 @@
       "litValue": 1
     },
     {
+      "name": "SEL_VHF3",
+      "command": "AirbusFBW/VHF3Capt",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 2
+    },
+    {
+      "name": "SEL_HF1",
+      "command": "AirbusFBW/HF1Capt",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 3
+    },
+    {
+      "name": "SEL_HF2",
+      "command": "AirbusFBW/HF2Capt",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 4
+    },
+    {
+      "name": "SEL_VOR",
+      "command": "AirbusFBW/RMP1/BackupNavVORPress",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 6
+    },
+    {
+      "name": "SEL_LS",
+      "command": "AirbusFBW/RMP1/BackupNavILSPress",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 7
+    },
+    {
+      "name": "SEL_ADF",
+      "command": "AirbusFBW/RMP1/BackupNavADFPress",
+      "stateDataref": "AirbusFBW/RMP1SelFunc",
+      "litValue": 9
+    },
+    {
+      "name": "NAV_PRESS",
+      "command": "AirbusFBW/RMP1/BackupNavPress",
+      "stateDataref": "AirbusFBW/DRAIMS/NavBackupMode",
+      "stateIndex": 0,
+      "litValue": 1
+    },
+    {
+      "name": "AM_PRESS",
+      "command": "AirbusFBW/AMCapt"
+    },
+    {
+      "name": "BFO_PRESS",
+      "command": "AirbusFBW/RMP1/BackupNavBFOPress"
+    },
+    {
       "name": "RTP_XFER",
       "command": "AirbusFBW/RMPSwapCapt"
+    },
+    {
+      "name": "RTP_POWER",
+      "writeToggle": true,
+      "stateDataref": "AirbusFBW/RMP1Switch"
     },
     {
       "name": "MIC_VHF1",
@@ -73,17 +269,101 @@
     {
       "name": "MIC_VHF2",
       "command": "AirbusFBW/ACP1/VHF2Press"
+    },
+    {
+      "name": "MIC_VHF3",
+      "command": "AirbusFBW/ACP1/VHF3Press"
+    },
+    {
+      "name": "MIC_HF1",
+      "command": "AirbusFBW/ACP1/HF1Press"
+    },
+    {
+      "name": "MIC_HF2",
+      "command": "AirbusFBW/ACP1/HF2Press"
+    },
+    {
+      "name": "MIC_INT",
+      "command": "AirbusFBW/ACP1/INTPress"
+    },
+    {
+      "name": "MIC_CAB",
+      "command": "AirbusFBW/ACP1/CABPress"
+    },
+    {
+      "name": "MIC_PA",
+      "command": "AirbusFBW/ACP1/PAPress"
     }
   ],
 
   "listenToggles": [
     {
       "channel": "vhf1",
-      "command": "AirbusFBW/ListenVHF1"
+      "command": "AirbusFBW/ListenVHF1",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 0
     },
     {
       "channel": "vhf2",
-      "command": "AirbusFBW/ListenVHF2"
+      "command": "AirbusFBW/ListenVHF2",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 1
+    },
+    {
+      "channel": "vhf3",
+      "command": "AirbusFBW/ListenVHF3",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 2
+    },
+    {
+      "channel": "hf1",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 3
+    },
+    {
+      "channel": "hf2",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 4
+    },
+    {
+      "channel": "int",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 5
+    },
+    {
+      "channel": "cab",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 6
+    },
+    {
+      "channel": "ls",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 7
+    },
+    {
+      "channel": "mkr",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 8
+    },
+    {
+      "channel": "vor1",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 9
+    },
+    {
+      "channel": "vor2",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 10
+    },
+    {
+      "channel": "adf1",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 11
+    },
+    {
+      "channel": "adf2",
+      "stateDataref": "AirbusFBW/ACP1KnobPush",
+      "stateIndex": 12
     }
   ]
 }

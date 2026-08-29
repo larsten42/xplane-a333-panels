@@ -1075,3 +1075,29 @@ body[data-theme="deboss"] .mcdu-lsk-column .mcdu-key::before {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), 0 0 12px -2px var(--accent);
 }
+
+/* ------------------------------------------------- RMP/ACP backlight --- */
+/* src/rmp-panel.js's applyPanelGlow()/rmp.setBacklight() flip these
+   elements' color/text-shadow/filter directly (no class toggle — vendor/
+   rmp.js's/fcu-instruments.js's own components already paint them with
+   plain inline styles, so there's nothing else to hook a class-based
+   transition onto). A transition still applies to a *value* change on an
+   inline style property regardless of what set it, as long as one of these
+   rules names that property first — this is what turns RTP_POWER going
+   off into the panel's amber glow visibly fading down over the two knob
+   detents it actually takes to notice, rather than an instant snap to
+   dark. Scoped to rmp-panel/acp-panel specifically (not fcu-panel/efis-
+   panel, which drive the same properties through fcu-instruments.js's own
+   applyBacklight() but have never asked for an animated fade). */
+@media (prefers-reduced-motion: no-preference) {
+  rmp-panel [data-cap],
+  acp-panel [data-cap],
+  rmp-panel [data-label],
+  acp-panel [data-label],
+  acp-panel [data-legend] {
+    transition: color 0.2s ease, text-shadow 0.2s ease;
+  }
+  rmp-panel [data-caret] {
+    transition: border-top-color 0.2s ease, filter 0.2s ease;
+  }
+}
