@@ -65,9 +65,9 @@ const STEP = {
 // fast drag can never write a value the sim wouldn't accept. COM1/COM2's
 // max is 136990, *not* 136975 — the vendored component's own BANDS table
 // assumed 975, but walking the real fine_up_833 command through the 136
-// decade live (2026-08-11) showed it reaches 136980/136985/136990 exactly
-// like every other decade (see COM_FINE_INDEX_COUNT below); 975 was simply
-// wrong.
+// decade live (2026-08-11, re-confirmed 2026-08-27) showed it reaches
+// 136980/136985/136990 exactly like every other decade (see comFineStep()
+// below for the real skip pattern); 975 was simply wrong.
 const RAW_RANGE = {
   COM1: { min: 118000, max: 136990 },
   COM2: { min: 118000, max: 136990 },
@@ -92,24 +92,52 @@ const mod = (n, m) => ((n % m) + m) % m;
 const FINE_SPAN = { NAV1: 100, NAV2: 100, DME: 100, ADF1: 100, ADF2: 100 };
 
 // COM's real 8.33kHz channel grid isn't a uniform every-5 sequence within
-// one MHz — confirmed live 2026-08-11 by walking the real fine_up_833
-// command through two full decades (119 and 136): valid offsets are
-// multiples of 5 in [0,990], *except* whichever one is ==20 (mod 25) —
-// e.g. ...,015,[020 skipped],025,030,035,040,[045 skipped],050,... This is
-// the real ICAO 8.33kHz-within-legacy-25kHz-block channel numbering.
-// Encoded as a 160-entry index (40 blocks of 4 members) so stepping is a
-// plain wrapping array walk instead of modular arithmetic that also has to
-// reproduce the skip.
-const COM_FINE_INDEX_COUNT = 160; // 40 blocks x 4 members
-function comOffsetToIndex(offset) {
-  const block = Math.floor(offset / 25);
-  const member = Math.min(3, Math.round((offset - block * 25) / 5));
-  return block * 4 + member;
+// one MHz — X-Plane's own stby_com1_fine_up/down_833 commands skip one
+// specific position every 25 raw units, confirmed *twice* live now
+// (2026-08-11 originally, re-confirmed 2026-08-27 after a detour below):
+// e.g. ...,890,900,905,910,915,925,930,... (900 is kept, 920 is skipped).
+//
+// 2026-08-27 correction-of-a-correction: a user report ("kHz doesn't
+// always match the 8.33 logic") plus the UK CAA's own published "8.33 kHz
+// Frequency and Channel Display Table" (CAP 1573) looked like a strong
+// case that this was backwards — CAP 1573's real-world channel designators
+// use +5/+10/+15kHz within each 25kHz block and never the block boundary
+// itself (+0, which the document says selects legacy 25kHz mode instead).
+// That was briefly shipped as a "fix" here. It was wrong for this
+// function's actual job: walking the *real* fine_up_833/fine_down_833
+// commands live through 80 steps (both directions, decade wraps included)
+// showed X-Plane's own simulated 8.33kHz stepping does NOT follow CAP
+// 1573's real-world table — it keeps the block-boundary position and
+// skips a different one instead (see the sequence above). X-Plane's own
+// COM radio simulation apparently doesn't implement the real ICAO/CAA
+// channel designator convention exactly; this app's job is to mirror
+// what X-Plane actually does with the frequency it actually tunes, not
+// what a real aircraft's radio would display for the same nominal
+// channel, so matching X-Plane's real behavior is the correct choice here
+// even though it disagrees with CAP 1573. (This likely also explains the
+// original user report: if X-Plane's own simulated frequency doesn't
+// match the real-world channel table for some values, no amount of
+// correctness in *this app's reproduction* of X-Plane's behavior closes
+// that gap — it's a difference between X-Plane's simulation and a real
+// radio, not a bug in mirroring X-Plane.)
+//
+// Modeled as raw 5kHz-aligned "slots" (200 per MHz — 1000kHz / 5kHz — of
+// which 160 are valid, matching the 4-of-every-5 pattern above) rather
+// than a compacted valid-only index, so a *current* value that isn't
+// itself one of the 160 valid stops (e.g. whatever arbitrary default
+// X-Plane itself starts a fresh COM standby frequency at, before this app
+// ever writes to it) still steps sensibly — comFineStep() just walks
+// forward/backward one raw slot at a time until it lands on a valid one,
+// handling "starting from an invalid position" for free instead of
+// needing a separate directional-snap rule for it.
+function isValidComSlot(slot) {
+  return mod(slot, 5) !== 4; // the one skipped position every 25kHz (5 slots) — confirmed live 2026-08-27, see this section's own comment above
 }
-function comIndexToOffset(index) {
-  const block = Math.floor(index / 4);
-  const member = index % 4;
-  return block * 25 + member * 5;
+function comFineStep(offsetKhz, dir) {
+  const slotsPerMHz = 200; // 1000kHz / 5kHz; the MHz digit itself is handled by the caller
+  let slot = mod(Math.round(offsetKhz / 5) + dir, slotsPerMHz);
+  while (!isValidComSlot(slot)) slot = mod(slot + dir, slotsPerMHz);
+  return slot * 5;
 }
 
 // Whether the coarse ring wraps around at the band's own edges (COM/NAV/
@@ -141,8 +169,7 @@ export function nextStandbyRaw(band, current, mode, dir) {
     const offset = current - coarseDigit;
     let nextOffset;
     if (band === "COM1" || band === "COM2") {
-      const index = mod(comOffsetToIndex(offset) + dir, COM_FINE_INDEX_COUNT);
-      nextOffset = comIndexToOffset(index);
+      nextOffset = comFineStep(offset, dir);
     } else {
       nextOffset = mod(offset + dir * step.fine, FINE_SPAN[band] ?? coarseUnit);
     }
