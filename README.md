@@ -3,11 +3,12 @@
 Web-based cockpit panels for X-Plane 12's stock aircraft — a full **MCDU**,
 **EFIS**, and **FCU** set for the Airbus A330, an early **RMP+ACP** (radio
 management/audio control) panel for the same aircraft, **MCDU**-only
-support for the Boeing 737-800, experimental **EFIS** and **RMP+ACP**
-profiles for the ToLiss Airbus add-on, and a **Radio** stack (COM/NAV/
-ADF/DME) that works with any of X-Plane's default aircraft — all in one
-page, switched with a **Panel** selector (and an **Aircraft** selector for
-which airframe to use). Runs in any browser, no X-Plane plugin to install.
+support for the Boeing 737-800, experimental **MCDU**, **EFIS**, and
+**RMP+ACP** profiles for the ToLiss Airbus add-on, and a **Radio** stack
+(COM/NAV/ADF/DME) that works with any of X-Plane's default aircraft — all
+in one page, switched with a **Panel** selector (and an **Aircraft**
+selector for which airframe to use). Runs in any browser, no X-Plane
+plugin to install.
 
 ## Quick start
 
@@ -40,16 +41,27 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
 
 ## Status & scope
 
-- **MCDU** — Airbus A330 or Boeing 737-800, picked with the **Aircraft**
-  selector. Both are the default/stock aircraft only; add-on airliners
-  (Zibo, FlightFactor, ToLiss, ...) replace the default FMS entirely, so
-  the MCDU screen specifically isn't supported for any of them yet.
+- **MCDU** — Airbus A330 or Boeing 737-800 (default/stock only), plus an
+  **experimental** profile for the ToLiss Airbus add-on, all picked with
+  the **Aircraft** selector. The ToLiss one is a genuinely different
+  screen format under the hood (many small per-line, per-color text
+  datarefs rather than one text-plus-style array per line) but is
+  live-verified: a real page read correctly, and the keypad confirmed
+  end-to-end by typing into the scratchpad and clearing it. Add-on
+  airliners generally replace the default FMS/MCDU entirely, so this
+  doesn't extend to Zibo, FlightFactor, or anything else — just ToLiss,
+  and just because someone went and mapped it out.
 - **EFIS** — Airbus A330 (stock), plus an **experimental** profile for the
-  ToLiss Airbus add-on. The ToLiss one was built by matching against a
-  public dataref/command reference, not verified on real ToLiss hardware —
-  a couple of controls (BRG1/BRG2, the ND mode knob) are still unconfirmed
-  or unwired. See [`CONTRIBUTING.md`](CONTRIBUTING.md) if you can help
-  verify it.
+  ToLiss Airbus add-on. The ToLiss one started as a first pass built by
+  matching against a public dataref/command reference; most of it has
+  since been live-verified against a running ToLiss Airbus (CSTR/WPT/VOR.D/
+  NDB/ARPT/FD/LS buttons, the baro knob and its STD/QNH push-pull and unit
+  ring, and both ND selector knobs — MODE and RANGE are both directly
+  writable on this aircraft, unlike the stock A330's MODE, which only has
+  paced step commands). BRG1/BRG2 (the ADF/OFF/VOR bearing-pointer
+  selectors) are still unwired — no matching command or dataref found at
+  all yet. See [`CONTRIBUTING.md`](CONTRIBUTING.md) if you can help verify
+  the rest.
 - **FCU** — Airbus A330 (stock) only; Boeing's real hardware is different
   enough (an MCP instead of an FCU) that supporting the 737 means a new
   panel design, not a config change. Every button, knob, and display is
@@ -63,25 +75,28 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
   radio-stack namespace, not an aircraft-specific one, so it works with any
   default X-Plane aircraft that has the standard radio stack. Transponder
   mode isn't wired yet.
-- **RMP+ACP** — Airbus A330 (stock), plus an **experimental** profile for
-  the ToLiss Airbus add-on, both **early**: the newest panel here, scoped
-  to VHF1/VHF2 (COM1/COM2) for its first pass rather than the whole real
-  unit. On the stock A330, what's there is live-verified and usable —
-  tuning (including the real coarse/fine 8.33kHz-grid behavior the Radio
-  panel has), channel select, transfer, power, transmit-select, and the
-  ACP's per-channel listen toggle. VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on
+- **RMP+ACP** — Airbus A330 (stock) and the ToLiss Airbus add-on, the
+  newest panel here. On the stock A330, what's there is live-verified and
+  usable — tuning (including the real coarse/fine 8.33kHz-grid behavior
+  the Radio panel has), channel select, transfer, power, transmit-select,
+  and the ACP's per-channel listen toggle, scoped to VHF1/VHF2 (COM1/COM2)
+  rather than the whole real unit — VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on
   the RTP and the ACP's INT/CAB/PA/nav-reception rows aren't wired yet,
-  and ACP reception volume can't actually reach the sim — X-Plane's own
-  Web API rejects the write with an error, on this aircraft's specific
-  datarefs, not something fixable from here. The ToLiss profile is a
-  first pass built by name-matching against a supplied dataref/command
-  listing, not verified on real ToLiss hardware — tuning, channel select,
-  transfer, and transmit-select fire real commands, but several pieces
-  (power, transmit/channel-select lit feedback, reception volume, the
-  listen toggle's lit feedback) have no confirmed dataref to read back
-  from and are left either unwired or command-only. See
-  [`ARCHITECTURE.md`](ARCHITECTURE.md) for the details, and
-  [`CONTRIBUTING.md`](CONTRIBUTING.md) if you can help verify it.
+  and ACP reception volume can't actually reach the sim (X-Plane's own Web
+  API rejects the write with an error on this aircraft's specific
+  datarefs, not something fixable from here). The **ToLiss** profile
+  covers more ground: on the RMP, VHF1/VHF2/VHF3, HF1/HF2, and the STBY
+  NAV backup functions VOR/LS/ADF; on the ACP, transmit-select lit state
+  for VHF1/VHF2/VHF3/HF1/HF2/INT/CAB/PA and listen-toggle lamps for those
+  plus LS/MKR/VOR1/VOR2/ADF1/ADF2 — all live-verified against a running
+  ToLiss A330, right down to the SEL/NAV/BFO/AM caret lamps, the RMP's
+  panel backlight (dims and the displays go blank when RTP power is off,
+  rather than freezing on the last frequency shown), and the ACP's
+  MIC transmit-select LEDs. AM and BFO (RMP) have real buttons and
+  commands but were confirmed to have no observable effect on anything, so
+  they're wired command-only. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for
+  the details, and [`CONTRIBUTING.md`](CONTRIBUTING.md) if you can help
+  close the remaining gaps.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full known-limitations
 list and the roadmap.
@@ -143,6 +158,12 @@ share the one connection, so there's no need to reconnect when switching.
   start): server and X-Plane connection status, a QR code per network
   interface for pointing a tablet at the right address without typing it
   in, and who's currently connected.
+- **Connection diagnostics**: a **Diagnostics** button next to the
+  connection status in every panel's own top bar (not just the operator
+  console) opens a log of connection events — status changes, retries,
+  errors — plus a snapshot of the browser's own network state, all in one
+  **Copy diagnostics** button. Meant for the tablet itself, when the
+  connection is flaky and there's no devtools console handy to see why.
 - **Android home-screen shortcut**: Chrome's **⋮ menu → Add to Home
   screen** adds one with the app's own icon and name. It opens as a
   normal browser tab rather than a standalone app — that needs HTTPS,

@@ -67,13 +67,28 @@ Shows:
 - Server status, version, uptime, and port.
 - Whether X-Plane is reachable (a fresh check against `/api/capabilities`
   on every page load — not a cached/background poll), its reported
-  version, and whether `XPLANE_HOST`/`XPLANE_PORT` are non-default.
+  version, its response time, and whether `XPLANE_HOST`/`XPLANE_PORT` are
+  non-default. "Recheck now" forces an immediate check outside the poll
+  cadence (with an explicit "Checking…" state) — mostly useful for
+  distinguishing "down" from "up but slow to respond," which otherwise
+  looks identical to a plain reachable/unreachable boolean.
 - Every bound network interface as a clickable link and a QR code (skipped
   for `localhost` itself — nothing to usefully scan there), for pointing a
   tablet at the right address without typing it in.
 - Currently connected clients — IP and which panel was selected when they
-  connected (not live-tracked after that, since all three panels share one
+  connected (not live-tracked after that, since all five panels share one
   websocket connection per tab; see `xplane-client.js`'s `connectSocket()`).
+- Recent disconnects (last 20) — added after a user (relayed as "Jerry")
+  reported random connection trouble with nothing concrete to go on. Each
+  entry records how long the connection lasted and a best-effort *reason*
+  (which side noticed trouble first: the tablet's own socket erroring, a
+  clean client-initiated close, or X-Plane's end of the proxy closing) —
+  see `tools/mcdu-server.js`'s upgrade handler, which sets a per-connection
+  `disconnectReason` from whichever side notices first and reads it once
+  in a single consolidated "close" handler. The connected-clients list
+  alone only ever shows *now*; this is what lets a pattern (e.g. every
+  drop from the same IP, or every drop tagged "X-Plane connection error")
+  show up after the fact.
 
 `console.html`/`css/console.css`/`src/console.js` render it, polling
 `tools/mcdu-server.js`'s own `/console/status.json` every few seconds —
@@ -81,6 +96,44 @@ not an X-Plane endpoint, just this server's internal state. QR codes are
 rendered client-side as SVG from `vendor/qrcode-generator.js`'s module
 matrix (see `vendor/README.md`), not the vendored library's own default
 output, so they match the page's look.
+
+## Connection diagnostics and auto-reconnect
+
+`src/xplane-client.js` auto-reconnects its websocket on any unexpected
+close, with exponential backoff (1s, 2s, 4s, ... capped at 30s) — added
+alongside the operator console's "Recent disconnects" above, for the same
+"random connection trouble" report. Before this, a dropped connection just
+sat in the `closed` state until someone noticed and clicked the
+(relabeled) "Reconnect" button, which builds an entirely new
+`XPlaneClient`/websocket from scratch; that manual path still exists as a
+hard-reset fallback, but most drops now recover on their own. `closeSocket()`
+sets an internal flag that suppresses the retry loop — not currently called
+anywhere in this app (nothing explicitly disconnects today), so in
+practice every close is treated as worth retrying.
+
+Reconnecting means a brand-new websocket, which X-Plane's API knows
+nothing about — every dataref/command subscription from before the drop
+is silently gone from X-Plane's side even though `_datarefListeners`/
+`_commandListeners` (and now `_datarefIndexById`, added to remember each
+dataref's subscribed `index` for this exact purpose) still hold every
+registered callback. `_resubscribeAll()` replays a fresh
+`dataref_subscribe_values`/`command_subscribe_is_active` request for
+everything on reconnect, so adapters (McduAdapter, EfisAdapter, ...) don't
+need to know a reconnect happened at all — their callbacks just start
+receiving values again.
+
+A new `onDiagnostic` callback on `XPlaneClient` (alongside the existing
+`onStatusChange`) carries a running narrative — reconnect attempts and
+their backoff delay, websocket close codes, and request failures that
+were previously only a `console.warn` — into `src/app.js`'s new
+diagnostics panel (the "Diagnostics" button next to the connection
+status). That panel shows a live timestamped log plus a snapshot
+(browser online/offline, `navigator.connection` type where supported) and
+a "Copy diagnostics" button, so a report like "it doesn't connect
+sometimes" can come back with actual log lines instead of a vague
+description — devtools access isn't a realistic ask on a tablet. The log
+is module-level in `app.js`, not tied to one `XPlaneClient` instance, so
+it survives across manual Reconnect clicks too.
 
 ## Progressive Web App
 
@@ -180,17 +233,20 @@ wiring up a new profile.
   real-flight mileage than MCDU/EFIS and a couple of annunciators (LVLCH)
   have no confirmed driving dataref yet — see the Roadmap below for the
   current list.
-- RMP+ACP is the newest panel and the least complete one: it covers
-  VHF1/VHF2 (COM1/COM2) only, deliberately scoped down from the real
-  unit's full channel set for its first pass. What's wired there is
+- RMP+ACP on the **stock A330** is the least complete profile of the two:
+  it covers VHF1/VHF2 (COM1/COM2) only, deliberately scoped down from the
+  real unit's full channel set for its first pass. What's wired there is
   live-verified, including the real coarse/fine 8.33kHz-grid tuning
   behavior shared with the Radio panel and the ACP's per-channel listen
   toggle — but VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP and the ACP's
   INT/CAB/PA/nav-reception rows aren't wired yet, and ACP reception volume
   can't actually reach the sim (X-Plane's own Web API rejects the write —
   see "ACP reception volume" under RMP+ACP's own Interface entry below).
-- MCDU supports the stock A330 and 737-800 (an **Aircraft** selector picks
-  the profile); EFIS and FCU are Airbus-only — Boeing's real hardware is
+  The **ToLiss** profile has since grown well past this same starting
+  point and covers all of the above — see its own Interface subsection.
+- MCDU supports the stock A330 and 737-800, plus an experimental ToLiss
+  Airbus profile (an **Aircraft** selector picks which); EFIS and FCU are
+  Airbus-only — Boeing's real hardware is
   an MCP, not an FCU, with its own different EFIS control panel, so
   porting those is a new panel design, not a profile swap. Selecting the
   737 (or **Generic**) greys out the EFIS/FCU/MCDU panel options that
@@ -211,14 +267,16 @@ wiring up a new profile.
   has a rotary knob there, and nothing obviously matching it turned up in
   a live dataref/command scan (unlike the Airbus, which uses a plain
   press-up/down command pair). Left unwired rather than guessed.
-- `npm run mock`'s mock X-Plane server only implements the MCDU screen
-  dataref — EFIS's, FCU's, Radio's, and RMP+ACP's buttons, readouts, and
-  knobs/levers aren't mocked yet, so testing any of them needs a real
+- `npm run mock`'s mock X-Plane server only implements the stock aircraft's
+  MCDU screen dataref shape — EFIS's, FCU's, Radio's, and RMP+ACP's
+  buttons/readouts/knobs/levers, and ToLiss's entirely different MCDU
+  screen shape, aren't mocked yet, so testing any of those needs a real
   X-Plane instance.
 - Brightness and annunciator-light datarefs were found alongside the MCDU
   keypad mapping but aren't wired into the interface yet.
-- No automatic reconnect, no multi-tablet coordination beyond X-Plane's own
-  CDU1/2/3 split, no offline/PWA support yet.
+- No multi-tablet coordination beyond X-Plane's own CDU1/2/3 split, no
+  offline/PWA support yet. Dropped connections do now auto-reconnect with
+  backoff — see "Connection diagnostics and auto-reconnect" above.
 - MCDU rendering assumes one style byte per character, which holds for
   plain ASCII; multi-byte glyphs like ° could in principle misalign (not
   observed in practice).
@@ -235,6 +293,83 @@ wiring up a new profile.
   physical keyboard drives the alpha/numeric keys, plus `.`, `/`, `-`, and
   Backspace (→ CLR). Scoped to the MCDU panel only — switching to EFIS or
   FCU releases the keyboard.
+
+**ToLiss Airbus profile** (`mcdu-toliss-airbus.json`): a genuinely
+different screen shape from the stock A330's, not just different names —
+`src/mcdu-adapter.js`'s `connect()` branches into a completely separate
+path (`_connectColoredLinesScreen()`/`_recomputeColoredRow()`) the moment
+`profile.screen.kind === "coloredLines"`, so this and `default-fms.json`
+share no code at runtime; changing one can't regress the other (confirmed
+by diff, not just by design, when this was built).
+
+- **The real shape**: ToLiss exposes each screen row as one or two
+  "sources" (a large-font and small-font variant of the same physical
+  row — e.g. `cont3`/`scont3` — confirmed live to be mutually exclusive),
+  each split across up to 7 separate same-length plain-text datarefs, one
+  per color letter. Rendering a row means overlaying every color's text
+  onto a blank line, character by character — confirmed live only one
+  color ever has a real character at a given position, the rest hold
+  spaces. This is plain base64-encoded ASCII text (decode, trim the
+  trailing NUL, done), not the stock aircraft's byte-array-plus-style-
+  bitfield pair.
+- **Live-verified 2026-08-28**: read a real INIT page and F-PLN page
+  through the actual `McduAdapter` (no browser needed — it has no DOM
+  dependency at all) and confirmed the rendered text matched exactly;
+  confirmed the keypad end-to-end by pressing individual key commands to
+  type into the scratchpad and watching it accumulate live, then clearing
+  it with 3 presses of CLR (one character removed per press, matching a
+  real Airbus CDU). Every key in the profile resolved — zero unresolved.
+- **Color mapping is the one open, lower-confidence gap**: `g` (green)
+  and `w` (white) are confirmed live against real content; `a`/`y`
+  (amber/yellow) and `b` (assumed to be Airbus's cyan-ish "blue") are
+  standard-convention guesses not yet seen live; `s` is the least
+  confident — seen only on a small page-number readout, suggesting a
+  dim/small white variant rather than a distinct hue. None of this
+  affects functionality, only which CSS color class a character gets —
+  see the profile's own `_note_provenance`.
+- **No reverse/flash/underline** — no dataref for any of those was found
+  for this screen, so ToLiss MCDU text always renders plain.
+- **Box-glyph placeholder**: a real Airbus MCDU shows a row of small amber
+  boxes for a mandatory field not yet entered (e.g. an empty `CO RTE` or
+  `FROM/TO` on INIT/A). ToLiss encodes that as literal repeated `E`
+  characters, but only in the `s` color — confirmed live 2026-08-29 by
+  reading the raw `cont1s`/`label1w` dataref bytes behind a live "EEEEEE"
+  report. This is contextual, not a universal "E means box" rule: a real
+  typed E (e.g. in the scratchpad) still renders as E, and `s` is also
+  used for legitimate small text elsewhere (a page-number readout).
+  `mcdu-adapter.js`'s `_recomputeColoredRow()` special-cases only the
+  exact `(char="E", colorLetter="s")` pair, substituting a box glyph
+  (`▯`) in amber — see the profile's own `_note_on_box_placeholder`.
+- **Bracket-style mandatory-field placeholder**: a second `s`-channel
+  symbol, alongside the box glyph above. On the TAKEOFF PERF page,
+  not-yet-entered numeric fields (V1/VR/FLAPS-THS/TRANS ALT-style)
+  render as e.g. `[ ]/[ ]` rather than a row of boxes. Confirmed live
+  2026-08-29 that the raw bytes are literal `A`/`B` in the `s` color
+  (`cont3s` = `"...A B A B"`) — `A` is the left bracket half, `B` the
+  right. `mcdu-adapter.js`'s `SYMBOL_FONT_GLYPHS` table maps `E`→▯ and
+  `A`/`B`→`[`/`]` for the `s` channel only; real letters A/B still
+  render as themselves in every other color — see the profile's own
+  `_note_on_bracket_placeholder`.
+- **Degree symbol**: another classic Airbus/Boeing CDU font quirk — a
+  literal backtick byte (`` ` ``, 0x60) means °, not an actual backtick.
+  Confirmed live 2026-08-29 on the PROG page's BRG/DIST field (raw
+  `cont4w` was `" ---\`  /----.-"`, i.e. `"---°/----.-"`). Unlike the
+  box glyph above, this remap isn't color-specific — `decodeColoredChars()`
+  replaces every backtick with ° regardless of color, since a literal
+  backtick has no legitimate use on an MCDU screen.
+- **Page-number readout looks like arrows, but isn't a bug**: the small
+  `23`-style readout in the title's top-right corner (page 2 of 3) is
+  literal ASCII digits on the wire (confirmed live) — ToLiss's own
+  cockpit texture just renders that field in a small stylized font that
+  can look like a pair of left/right arrows. This app's decoding and
+  rendering are already correct; nothing was changed for it.
+- **Real Airbus keypad, not the stock profile's**: ToLiss's actual key
+  set doesn't include CLB/CRZ/DES/HOLD/EXEC/FIX/LEGS/DEP_ARR (Boeing CDU
+  concepts the stock default-FMS profile happens to also expose) and
+  swaps the stock profile's simple PREV/NEXT/UP/DOWN for a real 4-way
+  SLEW_UP/DOWN/LEFT/RIGHT cluster — new logical key names, not a reuse of
+  the stock ones, so both profiles keep their own real keys' shape. See
+  the profile's own `_note_on_keypad`.
 
 ### EFIS
 
@@ -378,48 +513,302 @@ A330 profile specifically unless noted otherwise.
 - **Not wired yet**: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the
   ACP's INT/CAB/PA/nav-reception rows.
 
-**ToLiss Airbus profile** (`rmp-acp-toliss-airbus.json`): a first pass
-built by name-matching against a supplied dataref/command listing
-(`docs/toliss-a340/{datarefs,commands}.txt`), not verified against a
-running ToLiss install — same caveat as the EFIS ToLiss profile, see
-`CONTRIBUTING.md` if you can help verify it. Real, mechanical differences
-from the stock profile, not just different names for the same shapes:
+**ToLiss Airbus profile** (`rmp-acp-toliss-airbus.json`): started as a
+first pass built by name-matching against a supplied dataref/command
+listing (`docs/toliss-a340/{datarefs,commands}.txt`), scoped to VHF1/VHF2
+only; has since grown to cover every channel the vendored `<rmp-panel>`/
+`<acp-panel>` UI already has real buttons for on the RMP side — VHF1/
+VHF2/VHF3, HF1/HF2, and the STBY NAV backup functions VOR/LS/ADF — plus,
+on the ACP side, transmit-select lit state for VHF1/VHF2/VHF3/HF1/HF2/
+INT/CAB/PA and listen-toggle lamps for all of those plus LS/MKR/VOR1/
+VOR2/ADF1/ADF2, all live-verified against a running ToLiss A330
+(2026-08-29/30). See `CONTRIBUTING.md` if you can help close out what's
+still open. Real, mechanical differences from the stock profile, not just
+different names for the same shapes:
 
-- **Tuning is command-based, not direct-write**: ToLiss's RMP1Freq/
-  RMP1StbyFreq datarefs aren't confirmed writable (or what validation a
-  write would get), unlike the stock A330's standby datarefs. The tune
+- **Tuning is command-based, not direct-write**: writability of the
+  readouts' own datarefs under ToLiss isn't confirmed (or what validation
+  a write would get), unlike the stock A330's standby datarefs. The tune
   knob instead fires RMP1FreqUp/DownLrg (coarse) and RMP1FreqUp/DownSml
   (fine) directly, one press per detent — `src/rmp-panel.js` checks
   `EfisAdapter.hasWritableEncoder(name)` per readout and falls back to
   this path when there's no writable encoder, rather than assuming every
   profile can offer one.
-- **COM1 and COM2 alias the same dataref on purpose**: no separate
-  per-channel frequency store was found for ToLiss in the supplied
-  listing — RMP1Freq/RMP1StbyFreq look like the RMP's own currently-
-  displayed value, not independent storage the way the stock A330's RTP
-  is (a routing layer over two separate underlying COM radios). See the
+- **Every channel aliases the same dataref pair on purpose**: ToLiss's
+  RMP1 acts as a single display/tune surface shared across whichever
+  channel is currently selected, not independent per-channel storage the
+  way the stock A330's RTP is (a routing layer over separate underlying
+  radios) — confirmed live across every mode listed above (selecting a
+  different channel changes what the shared datarefs show; tuning only
+  ever affects whichever channel is currently selected). `COM1`, `COM2`,
+  `VHF3`, `HF1`, `HF2`, `NAV_VOR`, `NAV_LS`, and `NAV_ADF` are all really
+  just "the one RMP1 display, currently showing channel X" — see the
   profile's own `_note_on_architecture`.
-- **Display scale**: ToLiss's frequency datarefs are assumed to be plain
-  float MHz (`118.505`), not the stock A330's pre-scaled `_833` integers
-  (`118505`) — readouts declare `displayScale: 1000` and
-  `src/rmp-panel.js`'s `syncDisplay()` applies it before rendering.
-- **Several gaps left honestly unwired rather than guessed**: no RMP
-  power command was found at all (silently no-ops, same as any profile
-  without an `RTP_POWER` button); MIC_VHF1/VHF2 and the channel-select
-  buttons fire real commands but have no confirmed lit-state feedback
-  (`ACP1Switch`/`RMP1SelFunc`'s exact value shapes are unconfirmed — the
-  channel-select litValue guess is low-risk since COM1/COM2 alias the
-  same data anyway, so a wrong guess only miscolors a caret, not lose
-  data); no reception-volume dataref was found at all; the listen-toggle
-  commands (`ListenVHF1`/`ListenVHF2`) are wired but have no confirmed
-  state dataref to light the lamp from. See the profile's own `_gap_*`
-  fields for the full reasoning on each.
-- **`listenToggles`, profile-driven now**: this used to be hardcoded in
-  `src/rmp-panel.js` for the stock A330 specifically; adding the ToLiss
-  profile meant generalizing it into a profile-declared array (channel,
-  command, optional stateDataref/stateIndex) that `wireListenToggles()`
-  resolves directly against the adapter's client, same as before — see
-  the stock profile's own updated `_note_on_listen_toggle`.
+- **Reads pre-formatted display strings, not a scaled number** — the
+  profile's biggest architectural difference from the stock A330, found
+  in two stages. First: a live report of "considerable misalignment"
+  against ToLiss's own cockpit display led to discovering that ToLiss's
+  own `AirbusFBW/RMP1Freq`/`RMP1StbyFreq` (the obvious-by-name choice) are
+  a higher-precision *internal* value on ToLiss's native 6.25kHz grid, not
+  what's actually shown — the plain `sim/cockpit2/radios/actuators/
+  com1_..._833` datarefs (same ones `radio-panel-generic.json` uses for
+  default aircraft) turned out to be the real ground truth, holding that
+  internal value quantized down to the classic 5kHz grid before display.
+  That fix worked for VHF, but only for VHF — X-Plane's core sim only
+  simulates VHF COM radios, so HF/backup-nav have no such generic-dataref
+  mirror at all. Second stage, once HF/backup-nav were in scope:
+  `AirbusFBW/RMP1/ActiveWindowString`/`StandbyWindowString` (base64+NUL-
+  terminated text, same convention as the MCDU screen — see
+  `mcdu-adapter.js`) turned out to be pre-formatted display strings that
+  work identically across *every* mode, including ones no scaled number
+  could represent at all — ADF's whole-kHz value with no decimal point,
+  and VOR/ILS's standby window showing a channel/course indicator (e.g.
+  `" C/000"`) instead of a frequency. Every readout below declares
+  `windowString: true` and reads this pair instead of `com1_..._833` now
+  — see the profile's own `_note_on_window_string` for the full story,
+  including why the com1_..._833 fix (kept working for VHF, just
+  superseded) doesn't generalize.
+- **`src/rmp-panel.js`'s `paintWindowString()`** renders a display string
+  directly onto a `<seven-seg>`'s own `segdisplay` object (`.set()`/
+  `.setDecimal()`), bypassing `rmp.setFreq()` entirely — that function
+  hardcodes a "6-digit MHz.MHz, decimal always after digit 3" shape that
+  only some of these strings have. The decimal point's position (or its
+  absence) is read from the string itself: extracted and stripped before
+  calling `.set()`, then `.setDecimal(i, true)` is called for that digit
+  index, or no decimal is lit at all when the string has none. Characters
+  with no seven-segment glyph (VOR/ILS's `/` course separator) render as a
+  blank digit — `fcu-instruments.js`'s own `glyph()` already falls back
+  gracefully rather than throwing — an acceptable approximation of
+  hardware this app's plain 7-segment display can't fully reproduce.
+- **Swap key flash, fixed**: bypassing `rmp.setFreq()` (above) had a side
+  effect — `vendor/rmp.js`'s own transfer key does its own optimistic
+  local swap-and-repaint straight from its internal `freq[]` array on
+  click (`_transfer()`), which is only ever kept current by `setFreq()`.
+  Never calling `setFreq()` left `freq[]` frozen at its construction-time
+  default (`121825`/`126375`) forever, so every physical swap-key press
+  briefly flashed that unrelated default before this file's own
+  `syncDisplay()` (triggered once the sim's real swap lands) corrected it
+  — confirmed live 2026-08-30 as the cause of a reported "strange
+  frequency" flash. Fixed by also calling `setFreq()` with a numeric
+  approximation of the window string (digits only, decimal point and
+  letters stripped) right alongside the real `paintWindowString()` call —
+  its own numeric repaint runs and is immediately overwritten in the same
+  tick on every *normal* refresh (no visible flash there), but now leaves
+  `freq[]` close enough that a physical click's optimistic repaint shows
+  something reasonable instead of a stale, unrelated value. Not a perfect
+  substitute (vendor's numeric path always shows a decimal point, which
+  isn't correct for e.g. ADF's whole-kHz value) — but a stray decimal
+  point for one transient frame is a far smaller gap than an unrelated
+  frequency.
+- **Channel select, confirmed live for every mode**: `RMP1SelFunc` reads
+  `0`=VHF1, `1`=VHF2, `2`=VHF3, `3`=HF1, `4`=HF2, `6`=VOR, `7`=LS/ILS,
+  `9`=ADF — confirmed by firing every select command in turn and watching
+  it land on an exact, stable value each time, with the displayed
+  frequency changing to match (`8` was never observed; possibly MLS or
+  another mode this profile doesn't cover). `src/rmp-panel.js`'s channel-
+  detection in `refresh()` was generalized from a hardcoded VHF1-vs-VHF2
+  check into a search over every `CHANNEL_TO_SEL_BUTTON` entry for
+  whichever one reports lit.
+- **`AirbusFBW/RMP1Lights`, one shared 16-element array behind AM/BFO, and
+  a real subscription-conflict bug along the way**: `AM`
+  (`AirbusFBW/AMCapt`, a real command, real UI button) was confirmed live
+  to leave `RMP1SelFunc` completely unchanged regardless of which channel
+  was selected before pressing it — not a distinguishable channel, just a
+  mode (AM vs. SSB reception) on top of whichever HF channel is currently
+  selected, matching real HF radio behavior. `BFO` similarly never moved
+  `RMP1SelFunc` or anything in the `DRAIMS1` namespace. Both turned out to
+  have real state in `RMP1Lights`, found by asking a user to toggle each
+  switch directly and diff the full array before/after: `AM` is index 6,
+  `BFO` is index 11 (both confirmed by exactly one index differing between
+  an off/on pair, no need to reverse-engineer the rest of the array).
+  **The bug**: `AM_PRESS`/`BFO_PRESS` were first wired with their own
+  `stateDataref`/`stateIndex` directly on the button (the same mechanism
+  `NAV_PRESS` correctly uses against a *different*, single-purpose
+  dataref) — but `xplane-client.js`'s `subscribeDataref()` only sends one
+  actual subscribe request per dataref id; the first caller's `index`
+  wins for every other subscriber sharing that id (documented on that
+  method already, violated here anyway). With two buttons wanting
+  different slices of the same `RMP1Lights` id, plus a whole-array
+  `RMP1_LIGHTS` readout added at the same time for an unrelated attempt at
+  the SEL indicator (see below), confirmed live 2026-08-30 that the
+  readout came back as a one-element array instead of the full 16 —
+  silently narrowed to whichever button connected first. Fixed by
+  consolidating both onto the one shared `RMP1_LIGHTS` readout (fetched
+  once, indexed twice in `src/rmp-panel.js`'s `refresh()`) instead of
+  separate per-button subscriptions — `AM_PRESS`/`BFO_PRESS` are
+  command-only again (no `stateDataref`), and their carets are driven
+  directly via `setCaret()`, not through `selectChannel()`, since neither
+  is part of the main row's mutually-exclusive channel selection. See the
+  profile's own `_note_on_am` and `_note_on_bfo`.
+- **The round "SEL" indicator — four attempts so far, none independently
+  confirmed live yet**: means "another RMP is also controlling this same
+  function" — nothing to do with which channel or backup-nav mode is
+  selected on *this* RMP alone. History (so a fifth attempt, if this one's
+  also wrong, doesn't repeat any of them): (1) a recognized channel
+  selected + RMP powered — wrong. (2) `RMP1Lights[13]`, derived from a
+  cross-comparison that looked convincing (1 for every normal selection,
+  0 only in one ambiguous backup-nav moment) — a coincidental correlation,
+  not causal, wrong. (3) `RMP1SelFunc == RMP2SelFunc || RMP1SelFunc == RMP3SelFunc`,
+  given directly by a user as "this kind of logic" — tried live by that
+  same user and also wrong, reason unconfirmed. (4) current:
+  `AirbusFBW/RMP1Lights_Raw` — a genuinely *different* dataref from
+  `RMP1Lights` (both exist, both 16-element `float_array`s, different live
+  values), "4th from Right" per the user, i.e. index 12 of 16. New
+  `RMP1_LIGHTS_RAW` readout exposes the whole array; `src/rmp-panel.js`
+  reads index 12 directly with the plain default threshold
+  (`value >= 0.5`). Explicitly not yet cross-checked against the real
+  cockpit — see the profile's own `_note_on_sel_indicator` for what a
+  proper confirmation needs (a live on/off pair, not a single snapshot).
+- **The STBY NAV row's "NAV" master key has its own real state, found
+  after "NAV" was initially lumped in with AM/BFO above as a dead end**: a
+  live report that "the backup nav LEDs are not working properly" led to
+  `AirbusFBW/DRAIMS/NavBackupMode`, a 2-element array whose index 0 is a
+  clean, repeatable binary toggle that flips exactly when `BackupNavPress`
+  is pressed. Its polarity was initially guessed wrong — shipped as
+  `litValue: 0` (assumed "0 = backup nav engaged, light it") — caught by
+  a live cross-check against the real cockpit: with the
+  dataref reading `[1, 0]` and `RMP1SelFunc`/the displayed frequency both
+  confirming completely normal VHF1 operation, the real NAV caret was
+  independently confirmed lit at that exact moment, meaning `1` (not `0`)
+  is the lit state. `NAV_PRESS` now declares `stateDataref`/
+  `stateIndex: 0`/`litValue: 1` — a new `EfisAdapter` button capability,
+  `stateIndex`, for a button whose lit state lives at one element of an
+  array dataref rather than being its own scalar (parallel to how
+  `litValue`/`invert` already work; only the read path differs, reusing
+  `subscribeDataref`'s existing `index` param).
+  On a real RMP, the NAV master lamp and whichever VOR/LS/ADF submode is
+  active light *simultaneously* (two independent lamps), not a single
+  mutually-exclusive selection the way the main channel row works —
+  `vendor/rmp.js`'s `selectChannel()` can only ever mark one caret 'sel'
+  at a time, so NAV's caret is now driven directly via its lower-level
+  `setCaret()` instead, alongside (not replacing) `selectChannel()`'s own
+  handling of whichever VOR/LS/ADF submode caret. See the profile's own
+  `_note_on_nav_backup_mode` for the full story, including why VOR/LS/ADF
+  submode *selection* itself (which appeared fully reliable in earlier
+  testing) wasn't touched here — it didn't reproduce via synthetic command
+  presses in this later session, but there's no evidence the reading
+  mechanism itself is wrong, only that this retest couldn't trigger a
+  transition to re-check it.
+- **ACP reception volume, resolved**: `VOL_VHF1`/`VOL_VHF2` use the plain
+  `sim/cockpit2/radios/actuators/audio_volume_com1`/`com2`. Confirmed live
+  2026-08-30: plain `0.0`-`1.0` floats, writable, and fractional writes
+  round-trip correctly — notably *better* than the stock A330's own
+  `volume_pos_0`/`1`, which `rmp-acp-a333.json`'s own
+  `_gap_acp_volume_write` documents as failing on any fractional write.
+  Mapped `VOL_VHF1`→`com1`/`VOL_VHF2`→`com2` directly rather than
+  following the RMP's single-display-surface model — a real ACP has one
+  independent physical volume knob per radio regardless of which one the
+  RMP is currently tuning, and these two datarefs are confirmed
+  genuinely independent of each other. Not extended to VHF3/HF1/HF2 —
+  no equivalent generic volume dataref confirmed for those yet.
+- **Listen-toggle lit state, resolved**: `AirbusFBW/DRAIMS1/ListenStates`
+  is a read-only 10-element array (order VHF1, VHF2, VHF3, HF1, HF2, INT,
+  CAB, LS, MKR, VOR1 — INT reads `1` by default, the rest `0`) — confirmed
+  live 2026-08-30 by toggling `ListenVHF1`/`ListenVHF2` and watching only
+  their own index flip, independently of each other and of the constant
+  INT slot. `listenToggles` below declares `stateDataref`/`stateIndex`
+  (0/1) for `vhf1`/`vhf2`, using the same grouped-index subscription
+  mechanism `rmp-acp-a333.json`'s own listen toggles already use. Not
+  extended to VHF3/HF1/HF2 (index 2 onward) — same VHF1/VHF2-only scope
+  as MIC/volume above.
+- **RMP power, resolved**: `AirbusFBW/RMP1Switch` — confirmed live
+  2026-08-30 to be a directly writable dataref with no toggle command
+  anywhere in the aircraft's command list at all. Writing it produces a
+  real effect (a non-frequency sentinel value on the display while off, a
+  real frequency again once back on). Wired via a new `EfisAdapter` button
+  shape, `writeToggle: true` (see the "Adding support for another
+  aircraft" section above) since there's no command to fire.
+- **The green "selected channel" caret stayed lit with the unit powered
+  off**: the same freeze behavior behind the SEL-indicator and NAV-caret
+  fixes above — `RMP1SelFunc` doesn't reset when `RTP_POWER` goes off, it
+  just freezes at whichever channel was last selected — meant
+  `selectChannel()` kept being called with that frozen channel forever,
+  painting its caret green even with the real display blank. Fixed by
+  passing a sentinel channel id (`"__off__"`, matching no real
+  `vendor/rmp.js` caret) to `selectChannel()` whenever `RTP_POWER` isn't
+  lit — every caret falls through to its unselected state, blanking all
+  of them rather than leaving one stuck. Confirmed live across a full
+  power off/on cycle.
+- **Panel backlight, and the seven-segs staying lit on power-off**:
+  `vendor/rmp.js`'s `RmpPanel.setBacklight()` already existed (it's what
+  makes `selectChannel()`'s non-selected carets paint amber-lit instead of
+  dim silkscreen-white) but was never actually being called from anywhere
+  — every caret but the selected channel's own had been rendering as if
+  permanently unpowered since this panel was first built. Neither
+  `RmpPanel` nor `AcpPanel` has a panel-*wide* backlight method the way
+  `fcu-instruments.js`'s own `<efis-panel>`/`<fcu-panel>` do (their shared
+  `applyBacklight()`/`panelApi().setBacklight()` — see "How it works"
+  above) even though `vendor/rmp.js`'s own `cap()` captions use the exact
+  same `data-cap="1"` marker that mechanism looks for — plausibly the same
+  author's convention, just never wired up for RMP/ACP. Rather than a
+  third vendor hand-patch, `src/rmp-panel.js`'s new `applyPanelGlow(root,
+  on)` reimplements the same idea at the app level, reaching only through
+  each panel's own public `root`/`button()`/`knob()` accessors: dims/lights
+  every `[data-cap]` caption directly, and delegates to each
+  `<fcu-led-button>`'s own `setBacklight()` (covers RMP's channel-name
+  legends and ACP's CALL/MECH/ATT/VOICE/RESET/PA legends, the same
+  mechanism `fcu-instruments.js`'s `applyBacklight()` uses internally) and
+  the tune knob's `setGlow()`. A `prefers-reduced-motion`-respecting CSS
+  transition on `color`/`text-shadow`/`filter`/`border-top-color`, scoped
+  to `rmp-panel`/`acp-panel`'s own `[data-cap]`/`[data-label]`/
+  `[data-caret]` elements (`css/mcdu.css`), turns the power-off transition
+  into a quick fade rather than an instant snap — a plain inline-style
+  change still transitions as long as a rule names the property first, so
+  no class toggle was needed. Separately, `AirbusFBW/RMP1/
+  ActiveWindowString`/`StandbyWindowString` freeze at their last value on
+  power-off (the same freeze-on-power-off pattern as `RMP1SelFunc`/
+  `RMP1Lights_Raw` above) — `refresh()` now explicitly blanks both
+  seven-segs via `rmp.display(...).clear()` whenever `RTP_POWER` isn't lit,
+  instead of leaving the last-tuned frequency frozen on screen.
+- **A live report that the physical HF1 button "doesn't seem to work"**:
+  this profile's own testing (firing `AirbusFBW/HF1Capt` through the same
+  API surface a working physical press would use) shows the command and
+  its dataref effects are real and correct — `RMP1SelFunc` reliably reads
+  `3` and the display shows a genuine HF frequency. If ToLiss's own 3D
+  click-spot for that button is unresponsive, that looks like a ToLiss-
+  side hit-testing issue, not something wrong with the command/dataref or
+  fixable from this app — see the profile's own `_note_on_hf1_caveat`.
+- **MIC transmit-select lit state, resolved, and extended well past
+  VHF1/VHF2**: `ACP1Switch`, the only candidate tried live 2026-08-29, was
+  confirmed to *not* track mic-select state. `AirbusFBW/ACP1Lights_Raw`
+  (a 16-element `float_array`) is the real one — but its index order
+  isn't simply the VHF1..PA channel list applied in sequence: firing
+  every `ACP1/*Press` command in isolation found `PA` at index 9, not 15
+  where a first pass (naive positional mapping) had put it. `VHF3Press`
+  never moved any index at all across two tries — plausibly correct
+  rather than broken, since ToLiss's VHF3 is a datalink/ACARS channel
+  with no voice transmission to select. `MIC_VHF1`/`VHF2`/`VHF3`/`HF1`/
+  `HF2`/`INT`/`CAB`/`PA` are all plain command-only buttons (no
+  `stateDataref`) — their lit state is read off a single shared
+  `ACP1_LIGHTS_RAW` readout and indexed directly in `src/rmp-panel.js`'s
+  `refresh()` (its own `MIC_LIGHT_INDEX`), the same subscription-conflict
+  reasoning as the `AM_PRESS`/`BFO_PRESS` fix above — 8 buttons each
+  declaring their own `stateIndex` against this one array id would
+  silently break all but the first to connect. See the profile's own
+  `_note_on_mic_lights` for the full per-index confirmation.
+- **`listenToggles`, profile-driven and extended from 2 channels to 13**:
+  this mechanism used to be hardcoded in `src/rmp-panel.js` for the stock
+  A330 specifically; adding the ToLiss profile meant generalizing it into
+  a profile-declared array (channel, optional command, optional
+  stateDataref/stateIndex — `command` was made independently optional
+  during this expansion, since most of the newly-added channels have a
+  confirmed lamp but no discoverable toggle command at all) that
+  `wireListenToggles()` resolves directly against the adapter's client.
+  ToLiss's own listen state moved from `AirbusFBW/DRAIMS1/ListenStates`
+  (a working 10-element array, confirmed for VHF1/VHF2) to
+  `AirbusFBW/ACP1KnobPush` — a *writable* 16-element array, confirmed to
+  mirror `ListenStates` exactly for VHF1/VHF2 while covering VHF3/HF1/
+  HF2/INT/CAB/LS/MKR/VOR1/VOR2/ADF1/ADF2/SAT1/SAT2/PA that `ListenStates`
+  doesn't. Being writable looked like it might let a listen toggle be
+  driven by a direct write instead of a command (the same idea behind
+  `RTP_POWER`'s `writeToggle` button shape) — tried and confirmed *not*
+  supported: X-Plane's `dataref_set_values` rejects a single-element
+  write to an array dataref with `incompatible_data`, needing the whole
+  array's worth of values at once. So this still goes through
+  `ListenVHF1`/`2`/`3` (the only `Listen*` commands that exist at all)
+  and stays a read-only lamp for the other 10 channels wired. See the
+  stock profile's own `_note_on_listen_toggle` and ToLiss's own
+  `_note_on_listen_state`.
 
 ### Shared
 
@@ -479,15 +868,24 @@ flag exactly what's confirmed vs. deduced vs. genuinely missing (the LS
 button, BRG1/BRG2 selector, and baro unit-ring toggle had no plausible
 match at all). Wire into `AIRCRAFT_EFIS_PROFILES` in `app.js` the same way
 as `efis-a333.json`; verify every row with `tools/discover.mjs` before
-trusting it. Note this only covers EFIS — MCDU's *screen* (not its keys)
-and the Radio panel both still assume a data/interaction shape ToLiss
-doesn't share, so porting those needs real code changes, not just a
-profile. RMP+ACP turned out to be portable after all despite starting
-from the same `laminar/A333/rtp_L/...`/`.../audio/capt/...`-specific
-assumptions as the Radio panel — see `rmp-acp-toliss-airbus.json` and its
-own RMP+ACP interface subsection above for what `src/rmp-panel.js` needed
-to become profile-driven (writable-encoder detection, listenToggles,
-display scale) to make that work as a profile swap instead.
+trusting it. Note this only covers EFIS — the Radio panel still assumes a
+data/interaction shape ToLiss doesn't share, so porting it needs real
+code changes, not just a profile. RMP+ACP and MCDU both turned out to be
+portable after all, despite starting from the same kind of stock-A330-
+specific assumptions as the Radio panel:
+
+- RMP+ACP — see `rmp-acp-toliss-airbus.json` and its own interface
+  subsection above for what `src/rmp-panel.js` needed to become
+  profile-driven (writable-encoder detection, listenToggles, display
+  scale) to make that work as a profile swap instead of a code change.
+- MCDU — ToLiss's screen genuinely *is* a different shape (many small
+  per-line/per-color text datarefs, not one text-plus-style-bitfield pair
+  per line), so this one did need a real code addition, not just a
+  profile — but a strictly additive one: `mcdu-adapter.js`'s `connect()`
+  branches into an entirely separate path when `profile.screen.kind`
+  says so, so `default-fms.json`/`b738-fms.json` share no code at
+  runtime with `mcdu-toliss-airbus.json` and can't be affected by it. See
+  the MCDU interface subsection above.
 
 **MCDU** (`default-fms.json`-shaped) has four parts:
 
@@ -508,13 +906,22 @@ button/readout shapes EFIS doesn't need, but both are the same three top-
 level parts, all keyed by a display name:
 
 - `buttons` — normally a `command` to press and a `stateDataref` reflecting
-  whether it's lit. Three extra shapes, all documented in
+  whether it's lit. Five extra shapes, all documented in
   `efis-adapter.js`'s own top comment: `litValue` (several buttons sharing
   one dataref between mutually-exclusive states, e.g. FCU's AP1/AP2),
   `onCommands`/`offCommands` (one logical press needing more than one
-  command, chosen by current state, e.g. FCU's A/THR), and no
-  `stateDataref` at all (a button with no light of its own on the real
-  hardware, e.g. FCU's HDG-TRK mode toggle).
+  command, chosen by current state, e.g. FCU's A/THR), no `stateDataref`
+  at all (a button with no light of its own on the real hardware, e.g.
+  FCU's HDG-TRK mode toggle), `writeToggle: true` instead of a `command`
+  (for a button with no toggle command anywhere at all, only a plain
+  writable `stateDataref` — added for ToLiss's RMP power switch,
+  `AirbusFBW/RMP1Switch`, which has no command in the aircraft's command
+  list at all; `press()` writes the opposite of the current lit state
+  directly, same invert handling as the read side), and `stateIndex` (for
+  a button whose lit state lives at one element of an array dataref
+  rather than being its own scalar — added for ToLiss's RMP backup-nav
+  "NAV" master key, `AirbusFBW/DRAIMS/NavBackupMode[0]`; combines with
+  `litValue`/`invert` exactly like a scalar `stateDataref` would).
 - `toggleSwitches` — several named positions sharing one state dataref,
   each position its own command and expected enum value (EFIS's BRG1/BRG2).
 - `readouts` — one or more datarefs formatted into display text (see
@@ -529,6 +936,21 @@ level parts, all keyed by a display name:
   picks whichever the profile actually has, added for
   `efis-toliss-airbus.json`'s `AirbusFBW/BaroUnitCapt` (confirmed writable,
   unlike the stock A330's command-pair baro ring).
+- **A real bug in `efis-panel.js`'s own MODE/RANGE knob wiring, found via
+  ToLiss**: `wireDetentKnob()` takes a `hasWriteDataref` flag to decide
+  between the write path (`adjustReadoutValue`) and the paced-command path
+  (`setReadoutIndex`) — but the call site hardcoded `false` for MODE and
+  `true` for RANGE, correct for the stock A330 (whose MODE genuinely has
+  no writable dataref) but wrong the moment a profile disagrees. Confirmed
+  live 2026-08-30 that ToLiss's own MODE (`AirbusFBW/NDmodeCapt`) *is*
+  directly writable — turning the knob from the web UI did nothing at all,
+  because the hardcoded `false` sent it down the paced-command path, and
+  ToLiss's profile has no increment/decrement commands for MODE to fire.
+  Fixed by passing `adapter.hasWritableEncoder(name)` instead of a
+  hardcoded literal at both call sites — reads the actual profile instead
+  of assuming every aircraft matches the stock A330's shape, the same
+  category of fix as the `writeToggle`/`stateIndex` additions elsewhere in
+  this document.
 
 For an EFIS/FCU of a genuinely different aircraft (own button/knob/lever
 set, not just an Airbus-family variant): duplicate the relevant profile,
@@ -603,6 +1025,7 @@ src/
 config/profiles/
   default-fms.json                  MCDU dataref/command mapping for the stock A330's FMS
   b738-fms.json                     MCDU dataref/command mapping for the stock 737-800's FMS
+  mcdu-toliss-airbus.json           MCDU mapping for the ToLiss Airbus add-on — live-verified 2026-08-28, different screen shape (see mcdu-adapter.js), see its own _note_provenance
   efis-a333.json                    EFIS dataref/command mapping for the stock EFIS (Airbus only)
   efis-toliss-airbus.json           EFIS mapping for the ToLiss Airbus add-on — deduced, not live-verified, see its own _note/_gap_* fields
   fcu-a333.json                     FCU dataref/command mapping for the stock FCU (Airbus only)
@@ -630,8 +1053,17 @@ tools/
   cause not yet identified.
 - The baro concentric ring's click target on the vendored EFIS knob is
   quite small — a Design polish item, not an instrumentation gap.
-- RMP+ACP: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP, and the ACP's
-  INT/CAB/PA/nav-reception rows.
+- RMP+ACP, **stock A330 profile only**: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO
+  on the RTP, and the ACP's INT/CAB/PA/nav-reception rows (the ToLiss
+  profile already covers all of these).
+- ToLiss RMP+ACP's SEL indicator (`AirbusFBW/RMP1Lights_Raw[12]`) has only
+  a soft user confirmation ("I think we have it now"), not an
+  independently verified on/off pair the way NAV/BFO/AM got — see its own
+  Interface subsection for the four earlier guesses this one replaced.
+- ToLiss RMP+ACP: indices 7/8/10/11/12/13/14 of `AirbusFBW/ACP1Lights_Raw`
+  (presumably LS/MKR/VOR2/ADF1/ADF2/SAT1/SAT2) are unconfirmed and unwired
+  — low priority, since the vendored UI has no MIC key for most of them
+  anyway.
 - ACP reception volume writes are currently rejected by X-Plane itself
   (confirmed live "incompatible_data" error on these specific
   `double`-typed datarefs) — likely an X-Plane Web API bug, not fixable
@@ -645,4 +1077,3 @@ tools/
 - Full offline-installable PWA (a service worker, not just the manifest —
   see "Progressive Web App" below for why that's a bigger step than it
   sounds).
-- Automatic reconnect on dropped connections.
