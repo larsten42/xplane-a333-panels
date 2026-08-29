@@ -34,8 +34,23 @@
         <dt>Status</dt><dd id="xplane-status">—</dd>
         <dt>Address</dt><dd id="xplane-address">—</dd>
         <dt>Version</dt><dd id="xplane-version">—</dd>
+        <dt>Response time</dt><dd id="xplane-latency">—</dd>
       </dl>
+      <button id="recheck-btn" type="button">Recheck now</button>
     </div>
+  </section>
+
+  <section>
+    <h2>Recent disconnects</h2>
+    <p class="muted">Last 20 dropped connections — useful for spotting a
+      pattern behind intermittent connection trouble.</p>
+    <table id="disconnects-table">
+      <thead>
+        <tr><th>IP</th><th>Panel</th><th>Was connected</th><th>Dropped</th><th>Reason</th></tr>
+      </thead>
+      <tbody id="disconnects-body"></tbody>
+    </table>
+    <p id="no-disconnects" class="muted" hidden>No drops recorded yet.</p>
   </section>
 
   <section>

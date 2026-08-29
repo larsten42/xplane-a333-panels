@@ -162,7 +162,32 @@ const SERVER_VERSION = getServerVersion();
 
 /** clientId -> {ip, panel, connectedAtMs} — populated/cleared in the upgrade handler below. */
 const connectedClients = new Map();
-const KNOWN_PANELS = new Set(["mcdu", "efis", "fcu"]);
+// Every value index.html's #panel-select can actually send as ?panel= —
+// widened from the original {mcdu, efis, fcu} (missing "radio"/"rmp", both
+// added since) while adding recentDisconnects below, since a disconnect
+// history is only useful if the panel column isn't just "unknown" for two
+// of the five real panels.
+const KNOWN_PANELS = new Set(["mcdu", "efis", "fcu", "radio", "rmp"]);
+
+// A rolling history of recent drops, oldest evicted first — the connected-
+// clients table alone only ever shows who's connected *right now*, which
+// is useless for "random issues connecting" (per-report from a user
+// relayed as "Jerry"): by the time anyone looks at the console, the
+// disconnect that mattered has already scrolled off. Recorded once per
+// connection end, in the single close handler in the upgrade listener
+// below, with a best-effort reason (which side noticed trouble first).
+const MAX_RECENT_DISCONNECTS = 20;
+const recentDisconnects = [];
+function recordDisconnect(entry, reason) {
+  recentDisconnects.unshift({
+    ip: entry.ip,
+    panel: entry.panel,
+    connectedSeconds: Math.round((Date.now() - entry.connectedAtMs) / 1000),
+    disconnectedAtMs: Date.now(),
+    reason,
+  });
+  recentDisconnects.length = Math.min(recentDisconnects.length, MAX_RECENT_DISCONNECTS);
+}
 
 // IPv4-mapped-IPv6 form (::ffff:192.168.1.5), common when a socket is
 // listening on all interfaces — stripped for a readable address.
@@ -184,17 +209,22 @@ function listInterfaces() {
 
 // Fresh on every status request rather than a background poll — this data
 // is only ever looked at by someone actively viewing the console, and a
-// short timeout keeps a downed X-Plane from ever hanging the page.
+// short timeout keeps a downed X-Plane from ever hanging the page. Also
+// timed (latencyMs) so the console can distinguish "down" from "up but
+// slow to respond" — the latter looks identical to a boolean and was
+// otherwise invisible.
 async function checkXPlane() {
+  const startedAt = Date.now();
   try {
     const res = await fetch(`http://${XPLANE_HOST}:${XPLANE_PORT}/api/capabilities`, {
       signal: AbortSignal.timeout(2000),
     });
-    if (!res.ok) return { reachable: false, version: null };
+    const latencyMs = Date.now() - startedAt;
+    if (!res.ok) return { reachable: false, version: null, latencyMs };
     const body = await res.json();
-    return { reachable: true, version: body["x-plane"]?.version ?? null };
+    return { reachable: true, version: body["x-plane"]?.version ?? null, latencyMs };
   } catch {
-    return { reachable: false, version: null };
+    return { reachable: false, version: null, latencyMs: Date.now() - startedAt };
   }
 }
 
@@ -208,6 +238,13 @@ async function serveConsoleStatus(req, res) {
       ip: c.ip,
       panel: c.panel,
       connectedSeconds: Math.round((Date.now() - c.connectedAtMs) / 1000),
+    })),
+    recentDisconnects: recentDisconnects.map((d) => ({
+      ip: d.ip,
+      panel: d.panel,
+      connectedSeconds: d.connectedSeconds,
+      secondsAgo: Math.round((Date.now() - d.disconnectedAtMs) / 1000),
+      reason: d.reason,
     })),
   });
   res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -411,10 +448,14 @@ server.on("upgrade", (req, socket, head) => {
   const rawPanel = new URLSearchParams(queryString ?? "").get("panel");
   const panel = KNOWN_PANELS.has(rawPanel) ? rawPanel : "unknown";
   const clientId = crypto.randomUUID();
-  connectedClients.set(clientId, { ip: normalizeIp(socket.remoteAddress), panel, connectedAtMs: Date.now() });
-  const forgetClient = () => connectedClients.delete(clientId);
-  socket.on("close", forgetClient);
-  socket.on("error", forgetClient);
+  const clientEntry = { ip: normalizeIp(socket.remoteAddress), panel, connectedAtMs: Date.now() };
+  connectedClients.set(clientId, clientEntry);
+
+  // Set by whichever side notices trouble first (the tablet's own socket,
+  // or the upstream connection to X-Plane), read once in the single
+  // "close" handler below — that's what lets recordDisconnect() say
+  // *why*, not just *that*, a connection ended.
+  let disconnectReason = null;
 
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\n" +
@@ -432,9 +473,13 @@ server.on("upgrade", (req, socket, head) => {
     },
     onText: (text) => socket.write(encodeFrame(0x1, Buffer.from(text, "utf8"))),
     onBinary: (buf) => socket.write(encodeFrame(0x2, buf)),
-    onClose: () => socket.end(),
+    onClose: () => {
+      disconnectReason ??= "X-Plane closed the connection";
+      socket.end();
+    },
     onError: (err) => {
       console.error("[proxy] upstream connection error:", err.message);
+      disconnectReason ??= `X-Plane connection error: ${err.code || err.message}`;
       socket.end();
     },
   });
@@ -448,6 +493,7 @@ server.on("upgrade", (req, socket, head) => {
       onText: sendUpstream,
       onBinary: sendUpstream,
       onClose: () => {
+        disconnectReason ??= "client closed the connection";
         socket.end();
         upstream.close();
       },
@@ -460,10 +506,17 @@ server.on("upgrade", (req, socket, head) => {
       feed(chunk);
     } catch (err) {
       console.error("[proxy] frame feed error:", err.message);
+      disconnectReason ??= `frame error: ${err.message}`;
     }
   });
-  socket.on("close", () => upstream.close());
-  socket.on("error", () => upstream.close());
+  socket.on("error", (err) => {
+    disconnectReason ??= `client network error: ${err.code || err.message}`;
+  });
+  socket.on("close", () => {
+    connectedClients.delete(clientId);
+    recordDisconnect(clientEntry, disconnectReason ?? "connection closed");
+    upstream.close();
+  });
 });
 
 // Without this, EADDRINUSE (by far the most common startup failure — either

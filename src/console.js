@@ -27,9 +27,16 @@ function render(data) {
   document.getElementById("xplane-address").textContent =
     `${data.xplane.host}:${data.xplane.port}` + (data.xplane.isDefault ? "" : " (non-default)");
   document.getElementById("xplane-version").textContent = data.xplane.version ?? "—";
+  const latencyEl = document.getElementById("xplane-latency");
+  latencyEl.textContent = data.xplane.latencyMs != null ? `${data.xplane.latencyMs}ms` : "—";
+  // A slow-but-reachable check (getting close to the server's own 2s
+  // timeout) looks identical to "Connected" without this — flag it so a
+  // flaky link doesn't hide behind a plain green status.
+  latencyEl.className = data.xplane.reachable && data.xplane.latencyMs > 500 ? "status-bad" : "";
 
   renderInterfaces(data.interfaces);
   renderClients(data.clients);
+  renderDisconnects(data.recentDisconnects ?? []);
 
   document.getElementById("last-updated").textContent = "Updated " + new Date().toLocaleTimeString();
 }
@@ -106,6 +113,28 @@ function renderClients(clients) {
   }
 }
 
+function renderDisconnects(disconnects) {
+  document.getElementById("no-disconnects").hidden = disconnects.length > 0;
+
+  const body = document.getElementById("disconnects-body");
+  body.textContent = "";
+  for (const d of disconnects) {
+    const tr = document.createElement("tr");
+    const tdIp = document.createElement("td");
+    tdIp.textContent = d.ip;
+    const tdPanel = document.createElement("td");
+    tdPanel.textContent = d.panel;
+    const tdConnected = document.createElement("td");
+    tdConnected.textContent = formatDuration(d.connectedSeconds);
+    const tdAgo = document.createElement("td");
+    tdAgo.textContent = formatDuration(d.secondsAgo) + " ago";
+    const tdReason = document.createElement("td");
+    tdReason.textContent = d.reason;
+    tr.append(tdIp, tdPanel, tdConnected, tdAgo, tdReason);
+    body.appendChild(tr);
+  }
+}
+
 function formatDuration(seconds) {
   if (seconds == null) return "—";
   const h = Math.floor(seconds / 3600);
@@ -116,5 +145,24 @@ function formatDuration(seconds) {
   return `${s}s`;
 }
 
+let refreshTimer = setInterval(refresh, REFRESH_MS);
+
+// Manual recheck: since checkXPlane() on the server is already fresh on
+// every poll (no caching), this doesn't need its own endpoint — it just
+// runs refresh() right now instead of waiting for the next tick, and
+// restarts the interval so the next automatic poll doesn't land right on
+// top of it. The real value is the disabled/"Checking…" state below,
+// which turns "the number is a few seconds stale" into an explicit,
+// watchable action for whoever's troubleshooting.
+const recheckBtn = document.getElementById("recheck-btn");
+recheckBtn.addEventListener("click", async () => {
+  clearInterval(refreshTimer);
+  recheckBtn.disabled = true;
+  recheckBtn.textContent = "Checking…";
+  await refresh();
+  recheckBtn.disabled = false;
+  recheckBtn.textContent = "Recheck now";
+  refreshTimer = setInterval(refresh, REFRESH_MS);
+});
+
 refresh();
-setInterval(refresh, REFRESH_MS);

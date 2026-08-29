@@ -91,6 +91,16 @@ const els = {
   panelRadio: document.getElementById("panel-radio"),
   panelRmp: document.getElementById("panel-rmp"),
   rmpMinimap: document.getElementById("rmp-minimap"),
+  diagToggle: document.getElementById("diag-toggle"),
+  diagPanel: document.getElementById("diag-panel"),
+  diagClose: document.getElementById("diag-close"),
+  diagCopy: document.getElementById("diag-copy"),
+  diagClear: document.getElementById("diag-clear"),
+  diagLog: document.getElementById("diag-log"),
+  diagSnapStatus: document.getElementById("diag-snap-status"),
+  diagSnapServer: document.getElementById("diag-snap-server"),
+  diagSnapOnline: document.getElementById("diag-snap-online"),
+  diagSnapNet: document.getElementById("diag-snap-net"),
 };
 
 // Reconnecting swaps in new adapters/keypad bound to a new client, and
@@ -325,7 +335,94 @@ function setStatus(state, detail) {
   // with — see wake-lock.js's own top comment for the HTTPS caveat.
   if (state === "open") startWakeLock();
   else stopWakeLock();
+  logDiag(state === "error" ? "error" : "info", detail ? `${state}: ${detail}` : state);
 }
+
+// -------------------------------------------------------- Diagnostics ----
+// A visible, copyable connection log — added after a user (relayed via
+// "Jerry") reported random connection trouble with no way to tell us more
+// than that. Devtools console isn't a realistic ask on a tablet; this is
+// the same information, kept in the page and exportable as plain text.
+// Module-level (not per-connect()) so the log survives across manual
+// Reconnect clicks, each of which builds a brand-new XPlaneClient — see
+// connect()'s own comment on that.
+const MAX_DIAG_LOG = 300;
+const diagLog = [];
+
+function logDiag(level, message) {
+  diagLog.push({ t: Date.now(), level, message });
+  if (diagLog.length > MAX_DIAG_LOG) diagLog.shift();
+  if (els.diagPanel.open) renderDiagLog();
+}
+
+function formatDiagTime(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour12: false });
+}
+
+function renderDiagLog() {
+  els.diagLog.textContent = "";
+  for (const entry of diagLog) {
+    const line = document.createElement("div");
+    line.className = `diag-line diag-level-${entry.level}`;
+    line.textContent = `${formatDiagTime(entry.t)}  ${entry.message}`;
+    els.diagLog.appendChild(line);
+  }
+  els.diagLog.scrollTop = els.diagLog.scrollHeight;
+}
+
+function renderDiagSnapshot() {
+  els.diagSnapStatus.textContent = els.status.textContent || "—";
+  els.diagSnapServer.textContent = window.location.origin;
+  els.diagSnapOnline.textContent = navigator.onLine ? "online" : "offline (browser reports no network)";
+  // navigator.connection is Chrome/Android-only (no Firefox/Safari support
+  // as of this writing) — absent rather than wrong on unsupported browsers.
+  const conn = navigator.connection;
+  els.diagSnapNet.textContent = conn
+    ? `${conn.effectiveType ?? "—"}${conn.downlink != null ? `, ~${conn.downlink}Mbps` : ""}${conn.rtt != null ? `, ~${conn.rtt}ms rtt` : ""}`
+    : "—";
+}
+
+function buildDiagText() {
+  const lines = [
+    "MCDU connection diagnostics",
+    `Generated: ${new Date().toISOString()}`,
+    `Status: ${els.diagSnapStatus.textContent}`,
+    `Server: ${els.diagSnapServer.textContent}`,
+    `Browser online: ${els.diagSnapOnline.textContent}`,
+    `Network: ${els.diagSnapNet.textContent}`,
+    `User agent: ${navigator.userAgent}`,
+    "",
+    "Log:",
+    ...diagLog.map((e) => `${new Date(e.t).toISOString()}  [${e.level}]  ${e.message}`),
+  ];
+  return lines.join("\n");
+}
+
+els.diagToggle.addEventListener("click", () => {
+  renderDiagSnapshot();
+  renderDiagLog();
+  els.diagPanel.showModal();
+});
+els.diagClose.addEventListener("click", () => els.diagPanel.close());
+els.diagClear.addEventListener("click", () => {
+  diagLog.length = 0;
+  renderDiagLog();
+});
+els.diagCopy.addEventListener("click", async () => {
+  const text = buildDiagText();
+  const original = els.diagCopy.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    els.diagCopy.textContent = "Copied!";
+  } catch {
+    // Clipboard API needs a secure context (HTTPS or localhost) — plain
+    // http://<lan-ip>:5173 on a tablet doesn't qualify, so this is the
+    // realistic fallback, not just a defensive catch-all.
+    window.prompt("Copy this text:", text);
+    els.diagCopy.textContent = "See prompt";
+  }
+  setTimeout(() => (els.diagCopy.textContent = original), 1500);
+});
 
 async function connect() {
   const cduIndex = Number(els.cdu.value);
@@ -343,6 +440,7 @@ async function connect() {
   // over it, so switching panels never needs a reconnect.
   const client = new XPlaneClient(window.location.hostname, window.location.port || 80);
   client.onStatusChange = (state, detail) => setStatus(state, detail?.message);
+  client.onDiagnostic = (entry) => logDiag(entry.level, entry.message);
 
   // Fail fast with a clear message if X-Plane isn't reachable through the
   // proxy, before bothering to open the websocket.

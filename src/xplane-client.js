@@ -32,10 +32,34 @@ export class XPlaneClient {
     this._pending = new Map();
     /** @type {Map<number, Set<(value: any) => void>>} callback sets keyed by dataref id — a Set, not one slot, because two profile entries can legitimately share a ref (e.g. AP1/AP2 both reading autopilot_12_status via litValue) and a single slot would let the second subscriber silently clobber the first's callback */
     this._datarefListeners = new Map();
+    /** @type {Map<number, number[]|undefined>} the `index` each dataref id was originally subscribed with (or undefined for a whole-dataref subscribe) — replayed by _resubscribeAll() after a reconnect, since subscribeDataref() itself only sends the wire request on a dataref's *first* subscriber and every id here already has one. */
+    this._datarefIndexById = new Map();
     /** @type {Map<number, Set<(isActive: boolean) => void>>} callback sets keyed by command id, same reasoning as _datarefListeners */
     this._commandListeners = new Map();
 
     this.onStatusChange = null; // (status: 'connecting'|'open'|'closed'|'error', detail?) => void
+    // (level: 'info'|'warn'|'error', message: string) => void — a running
+    // narrative of *why*, for the client-side diagnostics panel (app.js).
+    // onStatusChange alone only says "closed"; this is where "closed
+    // (code 1006, X-Plane's connection reset)" or "reconnecting in 4s
+    // (attempt 3)" goes, none of which onStatusChange's terse state enum
+    // can carry.
+    this.onDiagnostic = null;
+
+    // Auto-reconnect state. A dropped connection is the normal case here
+    // (see tools/mcdu-server.js's proxy — the tablet's WS, the proxy's own
+    // upstream WS to X-Plane, and the WiFi link in between are all things
+    // that can blip independently), and until this there was no recovery
+    // but the user noticing and clicking the "Reconnect" button — see
+    // app.js's own comment on that button being relabeled, never an
+    // automatic retry. closeSocket() is the only thing that suppresses
+    // this (sets _explicitClose so a deliberate close doesn't trigger a
+    // retry loop) — and closeSocket() is not currently called anywhere in
+    // this app, so in practice every close reconnects.
+    this._explicitClose = false;
+    this._lastPanelHint = undefined;
+    this._reconnectAttempt = 0;
+    this._reconnectTimer = null;
   }
 
   // ---------------------------------------------------------------- REST --
@@ -130,6 +154,9 @@ export class XPlaneClient {
    *   at connect time, not live switches afterward.
    */
   connectSocket(panelHint) {
+    this._lastPanelHint = panelHint;
+    this._explicitClose = false;
+    this._clearReconnectTimer();
     return new Promise((resolve, reject) => {
       const url = panelHint ? `${this.wsUrl}?panel=${encodeURIComponent(panelHint)}` : this.wsUrl;
       const ws = new WebSocket(url);
@@ -137,27 +164,85 @@ export class XPlaneClient {
       this._setStatus("connecting");
 
       ws.addEventListener("open", () => {
+        const wasReconnect = this._reconnectAttempt > 0;
+        this._reconnectAttempt = 0;
         this._setStatus("open");
+        // Every dataref/command listener registered before the drop is
+        // still sitting in _datarefListeners/_commandListeners (nothing
+        // clears those on close) — X-Plane just doesn't know about them
+        // anymore on this brand-new socket, so replay the subscribe
+        // requests before anything else notices values have gone stale.
+        if (wasReconnect) {
+          this._diag("info", "reconnected — resubscribing to everything this session had open");
+          this._resubscribeAll();
+        }
         resolve();
       });
       ws.addEventListener("error", (ev) => {
+        this._diag("error", "websocket error (see browser console for detail, if any — the WebSocket API doesn't expose a reason here)");
         this._setStatus("error", ev);
         reject(new Error("WebSocket error"));
       });
-      ws.addEventListener("close", () => {
+      ws.addEventListener("close", (ev) => {
+        this._diag(
+          this._explicitClose ? "info" : "warn",
+          `websocket closed (code ${ev.code}${ev.reason ? `: ${ev.reason}` : ""})`
+        );
         this._setStatus("closed");
+        if (!this._explicitClose) this._scheduleReconnect();
       });
       ws.addEventListener("message", (ev) => this._handleMessage(ev));
     });
   }
 
+  /** Not currently called anywhere in this app (see the constructor's own note) — kept for API completeness and so a future "Disconnect" button has something to call that won't immediately trigger auto-reconnect. */
   closeSocket() {
+    this._explicitClose = true;
+    this._clearReconnectTimer();
     this.ws?.close();
     this.ws = null;
   }
 
+  _clearReconnectTimer() {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+  }
+
+  // Exponential backoff (1s, 2s, 4s, ... capped at 30s) rather than
+  // retrying at full speed — a genuinely-down X-Plane (not just a brief
+  // WiFi blip) shouldn't get hammered with reconnect attempts forever.
+  _scheduleReconnect() {
+    this._clearReconnectTimer();
+    const attempt = ++this._reconnectAttempt;
+    const delayMs = Math.min(1000 * 2 ** (attempt - 1), 30000);
+    this._diag("info", `reconnecting in ${Math.round(delayMs / 1000)}s (attempt ${attempt})`);
+    this._reconnectTimer = setTimeout(() => {
+      // Failures here are already logged by the 'error'/'close' listeners
+      // in connectSocket() above, which is also what schedules the *next*
+      // attempt — this .catch() exists purely to keep a failed retry from
+      // surfacing as an unhandled promise rejection.
+      this.connectSocket(this._lastPanelHint).catch(() => {});
+    }, delayMs);
+  }
+
+  /** Replays every currently-registered dataref/command subscription onto the (new) socket after a reconnect. Cheap to call even with nothing subscribed yet (first-ever connect) — both maps are just empty then. */
+  _resubscribeAll() {
+    for (const [id, index] of this._datarefIndexById) {
+      this._send("dataref_subscribe_values", { datarefs: [index ? { id, index } : { id }] });
+    }
+    for (const id of this._commandListeners.keys()) {
+      this._send("command_subscribe_is_active", { commands: [{ id }] });
+    }
+  }
+
   _setStatus(status, detail) {
     this.onStatusChange?.(status, detail);
+  }
+
+  _diag(level, message) {
+    this.onDiagnostic?.({ level, message });
   }
 
   _send(type, params) {
@@ -192,10 +277,13 @@ export class XPlaneClient {
     }
 
     // "result" acks for our own requests aren't currently awaited
-    // individually; surface failures to the console so mapping mistakes
-    // (e.g. a bad dataref id) aren't silently swallowed.
+    // individually; surface failures to the console — and the
+    // diagnostics panel, which is what someone like Jerry can actually
+    // see on a tablet — so mapping mistakes (e.g. a bad dataref id)
+    // aren't silently swallowed.
     if (msg.type === "result" && msg.success === false) {
       console.warn("[xplane-client] request failed", msg);
+      this._diag("warn", `request failed: ${msg.error_message ?? JSON.stringify(msg)}`);
     }
   }
 
@@ -212,12 +300,25 @@ export class XPlaneClient {
    *   Note: the subscribe request is only sent once per id (on the first
    *   subscriber), so every caller sharing an id must agree on the same
    *   `index` — this doesn't support two callers each wanting a different
-   *   slice of the same array dataref. Not a problem for how this is
-   *   actually used today (one indexed subscription per array dataref).
+   *   slice of the same array dataref; whichever calls this first for a
+   *   given id wins the index for every later caller, silently. This is a
+   *   real trap, not just theoretical — confirmed live 2026-08-30 when
+   *   rmp-acp-toliss-airbus.json's AM_PRESS/BFO_PRESS buttons each
+   *   declared their own `stateIndex` against the *same*
+   *   AirbusFBW/RMP1Lights id a third caller also wanted as a whole
+   *   array: the whole-array reader silently got back a one-element
+   *   array instead (see ARCHITECTURE.md's RMP+ACP section). If several
+   *   things need different slices (or the whole array) of one dataref,
+   *   subscribe once — to the whole array, no `index` — and have every
+   *   caller index into that single shared value themselves, the way
+   *   src/rmp-panel.js's RMP1_LIGHTS readout does now.
    */
   subscribeDataref(id, onValue, index) {
     const isFirst = !this._datarefListeners.has(id);
-    if (isFirst) this._datarefListeners.set(id, new Set());
+    if (isFirst) {
+      this._datarefListeners.set(id, new Set());
+      this._datarefIndexById.set(id, index); // remembered for _resubscribeAll() after a reconnect
+    }
     this._datarefListeners.get(id).add(onValue);
     if (isFirst) this._send("dataref_subscribe_values", { datarefs: [index ? { id, index } : { id }] });
   }
@@ -227,6 +328,7 @@ export class XPlaneClient {
     listeners?.delete(onValue);
     if (listeners && listeners.size === 0) {
       this._datarefListeners.delete(id);
+      this._datarefIndexById.delete(id);
       this._send("dataref_unsubscribe_values", { datarefs: [{ id }] });
     }
   }

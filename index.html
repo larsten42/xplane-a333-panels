@@ -47,6 +47,7 @@
     </label>
     <button id="conn-connect" type="button">Connect</button>
     <span id="conn-status" class="status status-closed">not connected</span>
+    <button id="diag-toggle" type="button" title="Connection diagnostics">Diagnostics</button>
     <label class="mcdu-only-control">Key style
       <select id="theme-select">
         <option value="flat">Flat</option>
@@ -142,6 +143,30 @@
     <div class="rmp-minimap-section" data-map-section="acp">ACP</div>
     <div class="rmp-minimap-viewport" data-map-viewport></div>
   </div>
+
+  <!-- Connection diagnostics — a visible, copyable log of what the
+       websocket connection has been doing (see src/app.js's own comment
+       on why this exists), for reporting a connection problem without
+       needing devtools access on a tablet. Native <dialog> for built-in
+       modal behavior (backdrop, ESC-to-close, focus trapping) with no
+       extra JS. -->
+  <dialog id="diag-panel" class="diag-panel">
+    <header class="diag-panel-header">
+      <h2>Connection diagnostics</h2>
+      <button id="diag-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <dl class="diag-snapshot">
+      <dt>Status</dt><dd id="diag-snap-status">—</dd>
+      <dt>Server</dt><dd id="diag-snap-server">—</dd>
+      <dt>Browser network</dt><dd id="diag-snap-online">—</dd>
+      <dt>Connection type</dt><dd id="diag-snap-net">—</dd>
+    </dl>
+    <div id="diag-log" class="diag-log"></div>
+    <footer class="diag-panel-footer">
+      <button id="diag-copy" type="button">Copy diagnostics</button>
+      <button id="diag-clear" type="button">Clear log</button>
+    </footer>
+  </dialog>
 
   <script type="module" src="./src/app.js"></script>
 </body>
