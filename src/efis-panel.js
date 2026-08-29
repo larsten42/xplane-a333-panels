@@ -47,8 +47,8 @@ export function wireEfisPanel(adapter) {
 
   wireButtonPresses(efis, adapter);
   wireBaroKnob(efis, adapter);
-  wireDetentKnob(efis, adapter, "nd-mode", "MODE", false);
-  wireDetentKnob(efis, adapter, "nd-range", "RANGE", true);
+  wireDetentKnob(efis, adapter, "nd-mode", "MODE", adapter.hasWritableEncoder("MODE"));
+  wireDetentKnob(efis, adapter, "nd-range", "RANGE", adapter.hasWritableEncoder("RANGE"));
   wireLevers(efis, adapter);
 
   const refresh = () => {
@@ -169,21 +169,30 @@ function refreshBaroRing(efis, adapter) {
   efis.knob("baro").setRing(ring);
 }
 
-// MODE has no writable dataref (paced increment/decrement commands only),
-// RANGE does — same distinction ALT/SPD/HDG/VS already draw on the FCU
-// side; see efis-adapter.js's adjustReadoutValue vs adjustReadoutIndex.
-// Both selector knobs report the *absolute* target index the user dragged
-// or clicked to (not a per-detent direction the way onTurn's dir is).
-// RANGE's writeDataref path tracks its own value optimistically, so
-// computing a relative delta from adapter.getReadoutValue() here stays
-// accurate turn after turn; MODE's paced-command path deliberately
-// doesn't (see adjustReadoutIndex()'s own comment), so a caller-computed
-// delta from that same stale value double-counts across a burst of quick
-// onChange calls — confirmed live 2026-08-15 as the cause of the ND mode
-// knob overshooting and snapping back on a fast drag or mouse-wheel
-// burst. setReadoutIndex() takes the absolute target directly and derives
-// the queued delta from the adapter's own tracked state instead, so it
-// stays correct regardless of how quickly onChange fires.
+// On the stock A330, MODE has no writable dataref (paced increment/
+// decrement commands only) while RANGE does — same distinction ALT/SPD/
+// HDG/VS already draw on the FCU side; see efis-adapter.js's
+// adjustReadoutValue vs adjustReadoutIndex. That's a per-aircraft fact,
+// not a fixed rule, though — confirmed live 2026-08-30 that ToLiss's own
+// MODE (AirbusFBW/NDmodeCapt) *is* directly writable, so the caller below
+// passes adapter.hasWritableEncoder(name) rather than a hardcoded
+// true/false per knob; a hardcoded `false` for MODE here previously meant
+// ToLiss's mode knob silently called the paced-command path (which its
+// profile has no commands for at all) instead of ever writing the
+// dataref that actually works — confirmed live as the reason turning it
+// from the web UI did nothing. Both selector knobs report the *absolute*
+// target index the user dragged or clicked to (not a per-detent direction
+// the way onTurn's dir is). A writeDataref path tracks its own value
+// optimistically, so computing a relative delta from
+// adapter.getReadoutValue() here stays accurate turn after turn; a paced-
+// command path deliberately doesn't (see adjustReadoutIndex()'s own
+// comment), so a caller-computed delta from that same stale value
+// double-counts across a burst of quick onChange calls — confirmed live
+// 2026-08-15 as the cause of the stock A330's ND mode knob overshooting
+// and snapping back on a fast drag or mouse-wheel burst. setReadoutIndex()
+// takes the absolute target directly and derives the queued delta from
+// the adapter's own tracked state instead, so it stays correct regardless
+// of how quickly onChange fires.
 // Also not power-gated, for the same reason as the baro ring.
 function wireDetentKnob(efis, adapter, knobId, readoutName, hasWriteDataref) {
   const knob = efis.knob(knobId);

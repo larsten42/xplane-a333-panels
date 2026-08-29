@@ -97,7 +97,7 @@
       "format": "positionLabel",
       "group": "selectors",
       "display": false,
-      "_note": "Our own A330 profile uses paced increment/decrement commands for MODE (no writable dataref). ToLiss's own list has no equivalent knob-turn command at all for NDmodeCapt — deduced (by analogy with RANGE, which is in the same situation) that it's directly writable instead. Unconfirmed; if it turns out ToLiss *does* have discrete turn commands, this should switch to the commands.increment/decrement shape instead.",
+      "_note": "Our own A330 profile uses paced increment/decrement commands for MODE (no writable dataref). ToLiss's own list has no equivalent knob-turn command at all for NDmodeCapt — deduced (by analogy with RANGE, which is in the same situation) that it's directly writable instead, and confirmed live 2026-08-30: is_writable:true, and writes round-trip correctly (wrote 3, read back 3; wrote 1, read back 1) — this is the right dataref and the write-based approach works.",
       "datarefs": {
         "value": "AirbusFBW/NDmodeCapt"
       },
