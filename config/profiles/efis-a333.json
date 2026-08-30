@@ -58,6 +58,7 @@
       "idLabel": "1",
       "stateDataref": "sim/cockpit2/EFIS/EFIS_1_selection_pilot",
       "group": "brg",
+      "_note_on_vor_value": "VOR really is 3, not 2 — confirmed live 2026-08-30 by cycling EFIS_1/2_pilot_sel_adf/off/vor via the REST API against a running ToLiss A339 (same generic dataref/command names as this profile, tested since the stock A330 wasn't loaded at the time): both BRG1 and BRG2 landed on 0/1/3 for ADF/OFF/VOR every time, never 2. Both switches read 2 before any command was ever sent this session — that's plausibly just this dataref's boot-time default, never a real switch position, which explains this file's own earlier gap note about seeing an unaccounted-for 2. A prior edit briefly changed VOR to 2 based on a report that (in hindsight) was almost certainly about the *ToLiss* profile's completely-unwired BRG1/BRG2 (see efis-toliss-airbus.json's own _gap_BRG1_BRG2), not a bug in this file — reverted.",
       "positions": [
         { "label": "ADF", "command": "sim/instruments/EFIS_1_pilot_sel_adf", "value": 0 },
         { "label": "OFF", "command": "sim/instruments/EFIS_1_pilot_sel_off", "value": 1 },

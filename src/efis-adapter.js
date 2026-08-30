@@ -47,6 +47,19 @@
 //     `invert` exactly like a scalar stateDataref would; only the read
 //     path differs (subscribeDataref's own `index` param, see
 //     _connectButton()).
+//
+// toggleSwitches have one extra shape of their own: a position can declare
+// `writeValue` instead of `command` — writes that literal value straight
+// to the switch's own stateDataref rather than firing a command. Added for
+// ToLiss's own BRG1/BRG2: its VOR command (sim/instruments/EFIS_1_pilot_
+// sel_vor) is confirmed live to reliably move the dataref, but to the
+// *wrong* value — 3, not the 2 a user confirmed by manually operating the
+// real physical switch — so firing that particular command is simply the
+// wrong write path for this position, not a labeling mismatch a `value`
+// correction alone could fix (`value` only affects how a read-back number
+// gets matched to a position for display; it was never involved in what a
+// press actually sends). `writeValue` sidesteps the misbehaving command
+// entirely, since the underlying dataref is itself confirmed writable.
 
 import { READOUT_FORMATS, READOUT_STEP_SIZES } from "./readout-formats.js";
 
@@ -79,6 +92,8 @@ export class EfisAdapter {
     this._onOffCommandIds = new Map();
     /** @type {Map<string, number>} button name -> resolved stateDataref id, for buttons with writeToggle:true instead of a command (see this file's own top comment) */
     this._writeToggleIds = new Map();
+    /** @type {Map<string, {drId: number, value: number}>} "switchName.positionIndex" -> the stateDataref id + literal value to write directly, for toggleSwitch positions with writeValue instead of a command (see this file's own top comment) */
+    this._switchWriteValues = new Map();
     /** @type {Set<string>} same keys as above, present in the profile but unresolved on this sim */
     this.unresolved = new Set();
     /** @type {Set<string>} "readoutName.valueKey" currently under active local drag control — see beginAdjust()/endAdjust() */
@@ -103,7 +118,7 @@ export class EfisAdapter {
       ...buttons.map((b) => b.command).filter(Boolean),
       ...buttons.flatMap((b) => [...(b.onCommands ?? []), ...(b.offCommands ?? [])]),
       ...readouts.flatMap((r) => Object.values(r.commands ?? {})),
-      ...toggleSwitches.flatMap((s) => s.positions.map((p) => p.command)),
+      ...toggleSwitches.flatMap((s) => s.positions.map((p) => p.command).filter(Boolean)),
     ];
     const datarefNames = [
       ...buttons.map((b) => b.stateDataref).filter(Boolean),
@@ -287,8 +302,18 @@ export class EfisAdapter {
 
     let anyResolved = false;
     toggleSwitch.positions.forEach((position, index) => {
-      const cmdId = commandIds.get(position.command);
       const fullKey = `${toggleSwitch.name}.${index}`;
+      // writeValue instead of command: some aircraft's real switch doesn't
+      // settle on the value its own named command actually produces (see
+      // this file's own top comment) — writing the stateDataref directly
+      // reaches the position's true value instead of firing a command
+      // that's confirmed to land somewhere else.
+      if (position.writeValue != null) {
+        anyResolved = true;
+        this._switchWriteValues.set(fullKey, { drId, value: position.writeValue });
+        return;
+      }
+      const cmdId = commandIds.get(position.command);
       if (cmdId == null) {
         console.warn(
           `[efis-adapter] switch "${toggleSwitch.name}" position "${position.label}": missing command "${position.command}"`
@@ -322,7 +347,26 @@ export class EfisAdapter {
     return this.switchPosition.get(switchName) ?? -1;
   }
 
-  press(name) {
+  /**
+   * @param {string} name
+   * @param {number} [durationSeconds] passed straight through to
+   *   XPlaneClient.activateCommand() for the plain-command case below —
+   *   default (omitted) keeps that method's own 0.15s default, exactly as
+   *   every existing caller already gets. Added for RMP's rapid tune
+   *   presses specifically: confirmed live 2026-08-30 that the default
+   *   150ms creates a real ~6.5/sec ceiling on X-Plane's websocket
+   *   command_set_is_active path (not the REST /activate endpoint, which
+   *   doesn't share this limit — a distinction this app didn't know about
+   *   until this was chased down), and that a caller who knows a
+   *   particular command doesn't need to be "held" that long can safely
+   *   raise the real deliverable rate by requesting a shorter one.
+   */
+  press(name, durationSeconds) {
+    const switchWrite = this._switchWriteValues.get(name);
+    if (switchWrite) {
+      this.client.setDatarefValue(switchWrite.drId, switchWrite.value);
+      return true;
+    }
     const onOff = this._onOffCommandIds.get(name);
     if (onOff) {
       const ids = this.isLit(name) ? onOff.off : onOff.on;
@@ -344,7 +388,7 @@ export class EfisAdapter {
       console.warn(`[efis-adapter] "${name}" has no resolved command; ignoring press`);
       return false;
     }
-    this.client.activateCommand(id);
+    this.client.activateCommand(id, durationSeconds);
     return true;
   }
 

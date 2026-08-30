@@ -61,7 +61,31 @@
     }
   ],
 
-  "_gap_BRG1_BRG2": "No BRG-named command or dataref found at all (only NDBBearingArray/VORBearingArray, which look like computed *display* values for the bearing pointer needles, not the physical ADF/OFF/VOR selector switch position). Our own A330 profile's toggleSwitches (BRG1/BRG2, each 3 positions) has no ToLiss equivalent in this list. Left out entirely — needs live discovery to even confirm ToLiss's real hardware here has a directly-analogous 3-position switch.",
+  "toggleSwitches": [
+    {
+      "name": "BRG1",
+      "idLabel": "1",
+      "stateDataref": "sim/cockpit2/EFIS/EFIS_1_selection_pilot",
+      "group": "brg",
+      "_note_on_brg": "Resolved — a user found these generic (not AirbusFBW-namespaced) datarefs/commands, the same ones the stock A330 profile already uses. ADF/OFF's real commands do land on the right values (0/1, matching the user's report and manual cockpit operation). VOR does not: sim/instruments/EFIS_1_pilot_sel_vor is confirmed live 2026-08-30 to reliably move the dataref to 3, but the user confirmed manually operating the real physical switch instead settles on 2 for VOR — so firing that command is the wrong write path entirely for this position, not just a labeling mismatch. Since sim/cockpit2/EFIS/EFIS_1_selection_pilot is itself directly writable (confirmed live, is_writable:true), VOR uses writeValue instead of a command — a straight dataref write to the position's own real value, sidestepping the command's wrong behavior. See efis-adapter.js's own top comment for the writeValue mechanism, and efis-a333.json's own BRG1/BRG2 note for the *stock* A330 (a separate aircraft, confirmed to genuinely use 3 for VOR via its own command, not the same value by coincidence).",
+      "positions": [
+        { "label": "ADF", "command": "sim/instruments/EFIS_1_pilot_sel_adf", "value": 0 },
+        { "label": "OFF", "command": "sim/instruments/EFIS_1_pilot_sel_off", "value": 1 },
+        { "label": "VOR", "writeValue": 2, "value": 2 }
+      ]
+    },
+    {
+      "name": "BRG2",
+      "idLabel": "2",
+      "stateDataref": "sim/cockpit2/EFIS/EFIS_2_selection_pilot",
+      "group": "brg",
+      "positions": [
+        { "label": "ADF", "command": "sim/instruments/EFIS_2_pilot_sel_adf", "value": 0 },
+        { "label": "OFF", "command": "sim/instruments/EFIS_2_pilot_sel_off", "value": 1 },
+        { "label": "VOR", "writeValue": 2, "value": 2 }
+      ]
+    }
+  ],
 
   "readouts": [
     {
