@@ -401,6 +401,18 @@ function connectUpstream(host, port, path, { onOpen, onText, onBinary, onClose, 
   let socket = null;
   req.on("upgrade", (res, sock, head) => {
     socket = sock;
+    // Node's raw net.Socket defaults to Nagle's algorithm on, which holds
+    // small writes back waiting to coalesce with more data or an ACK —
+    // exactly wrong for this traffic (a stream of tiny, latency-sensitive
+    // command/dataref messages, one per keypress or knob tick, not a bulk
+    // transfer). Reported live 2026-08-30 (relayed as "Jerry") as inputs
+    // feeling buffered and then arriving in a burst — the classic Nagle +
+    // delayed-ACK interaction. Off by default on both proxy hops (this
+    // one and the client-facing socket in the upgrade handler below); see
+    // docs/xplane-web-api-notes.md's own note on this proxy being a
+    // hand-rolled raw-socket relay, not a library, for why neither
+    // inherited a sane default from somewhere else.
+    socket.setNoDelay(true);
     const feed = makeFrameFeeder(makeMessageAssembler({ onText, onBinary, onClose, onPing: () => {} }));
     if (head?.length) feed(head);
     socket.on("data", feed);
@@ -439,6 +451,11 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
+  // Same Nagle's-algorithm fix as connectUpstream()'s own socket above,
+  // and for the same reason — this is the client-facing half of the same
+  // proxy, carrying the exact same small/frequent/latency-sensitive
+  // message traffic in the other direction.
+  socket.setNoDelay(true);
 
   // The query string (?panel=...) is our own operator-console bookkeeping,
   // not something X-Plane's own websocket endpoint needs to see — stripped
