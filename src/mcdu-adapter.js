@@ -53,6 +53,7 @@ export class McduAdapter {
     }
 
     this.onScreenUpdate = null; // () => void, called whenever a line changes
+    this.onVertSlewChange = null; // (upGlyph, downGlyph) => void, called whenever the up/down scroll-availability indicator changes — see _applyVertSlewKeys()'s own comment for why this is a separate callback rather than part of the character grid
   }
 
   /** Resolve all datarefs/commands for the current cduIndex against the live sim. */
@@ -122,9 +123,14 @@ export class McduAdapter {
    * line whenever any of its sources' datarefs push a new value.
    */
   async _connectColoredLinesScreen() {
-    const { rows, colors, colorMap, datarefTemplate } = this.profile.screen;
+    const { rows, colors, colorMap, datarefTemplate, vertSlewKeysDataref } = this.profile.screen;
     /** @type {Array<Array<Object<string,string[]>>>} [row][sourceIndex] -> {colorLetter: chars[]} */
     this._coloredRaw = rows.map((row) => row.sources.map(() => ({})));
+    // The up/down scroll-availability arrows (see _applyVertSlewKeys()'s
+    // own comment) live entirely outside the row/color grid above — a
+    // single extra scalar dataref, not part of any row's sources or the
+    // 24x14 character grid at all.
+    this._vertSlewKeys = 0;
 
     const nameInfo = [];
     rows.forEach((row, r) => {
@@ -138,8 +144,18 @@ export class McduAdapter {
         }
       });
     });
+    const vertSlewKeysName = vertSlewKeysDataref?.replace("{cdu}", String(this.cduIndex));
 
-    const ids = await this.client.resolveDatarefIds(nameInfo.map((i) => i.name));
+    // fallback: false -- most of these (row, source, color) combinations
+    // are absent from the bulk dataref list *by design* (most rows only
+    // ever populate 1-2 of the 7 color channels), not because they're a
+    // rare alias the bulk list happens to miss (see
+    // XPlaneClient.resolveDatarefIds()'s own comment on what the fallback
+    // is actually for). Confirmed live 2026-08-30 that leaving it on here
+    // meant 100+ sequential one-at-a-time 404 lookups on every connect —
+    // slow, and console-flooding for no benefit, since none of these were
+    // ever going to turn out to be an alias.
+    const ids = await this.client.resolveDatarefIds(vertSlewKeysName ? [...nameInfo.map((i) => i.name), vertSlewKeysName] : nameInfo.map((i) => i.name), { fallback: false });
     let resolvedCount = 0;
     for (const info of nameInfo) {
       const id = ids.get(info.name);
@@ -150,9 +166,42 @@ export class McduAdapter {
         this._recomputeColoredRow(info.row);
       });
     }
+    if (vertSlewKeysName) {
+      const vskId = ids.get(vertSlewKeysName);
+      if (vskId == null) {
+        console.warn(`[mcdu-adapter] vertSlewKeysDataref "${vertSlewKeysName}" did not resolve — scroll arrows won't show`);
+      } else {
+        this.client.subscribeDataref(vskId, (raw) => {
+          this._vertSlewKeys = Number(raw) || 0;
+          this._applyVertSlewKeys();
+        });
+      }
+    }
     if (resolvedCount === 0) {
       console.warn("[mcdu-adapter] coloredLines screen: nothing resolved at all — wrong aircraft, or profile.screen.datarefTemplate/rows is wrong?");
     }
+  }
+
+  /**
+   * Reports the up/down scroll-availability indicator via a dedicated
+   * callback rather than the character grid. Added for ToLiss's
+   * AirbusFBW/MCDU{cdu}VertSlewKeys — confirmed live 2026-08-30 against a
+   * real F-PLN page with scrollable content: `0` = neither arrow, `1` =
+   * both, `3` = down only. `2` (up only) is inferred by elimination, not
+   * independently confirmed — flag if it turns out to mean something else.
+   * First implementation overwrote the last two columns of the last
+   * content row directly, on the assumption that corner was always blank
+   * — wrong: a real Airbus MCDU can show real right-aligned text there
+   * too (e.g. "INSERT*" on F-PLN when there's a pending revision to
+   * confirm), confirmed live 2026-08-30 when it came through as "INSER"
+   * with the arrows stomping its last two characters instead of "INSERT*".
+   * Reporting this through its own callback instead — leaving the
+   * character grid alone entirely — means it can never collide with real
+   * screen content regardless of what any row happens to show.
+   */
+  _applyVertSlewKeys() {
+    const [up, down] = VERT_SLEW_GLYPHS[this._vertSlewKeys] ?? VERT_SLEW_GLYPHS[0];
+    this.onVertSlewChange?.(up, down);
   }
 
   /** Rebuilds one row of `this.screen` from every color/source currently cached for it — see _connectColoredLinesScreen()'s own comment for the shape. */
@@ -169,23 +218,31 @@ export class McduAdapter {
           let ch = chars[i];
           if (!ch || ch === " ") continue; // blank at this position in this color -- some other color (or nothing) owns it
           let color = colorName;
-          // Confirmed live 2026-08-29: the 's' channel isn't just a text
-          // color -- it doubles as a small "mandatory field, not yet
-          // entered" symbol font. Specific letters render as placeholder
+          // Confirmed live 2026-08-29 (E/A/B) and 2026-08-30 (2/3): the
+          // 's' channel isn't a text color at all -- it's a small symbol
+          // font. Specific characters render as placeholder/navigation
           // glyphs instead of themselves: "E" repeated is a row of small
-          // amber boxes (e.g. empty CO RTE/FROM-TO on INIT/A), while "A"/
-          // "B" are the left/right halves of a bracket placeholder (e.g.
-          // empty V1/VR/FLAPS-THS on TAKEOFF PERF, seen live as literal
-          // "A B" rendering as "[ ]"). Not every 's'-colored character is
-          // remapped though -- a small page-number readout also uses 's'
-          // and is real digits -- so only these exact letters are special-
-          // cased, regardless of what colorMap.s says otherwise.
+          // amber boxes (e.g. empty CO RTE/FROM-TO on INIT/A), "A"/"B" are
+          // the left/right halves of a bracket placeholder (e.g. empty
+          // V1/VR/FLAPS-THS on TAKEOFF PERF, seen live as literal "A B"
+          // rendering as "[ ]"), and "2"/"3" in the title row's top-right
+          // corner are left/right page-navigation arrows (e.g. DATA
+          // INDEX's "2""3" pair) -- previously misread as a literal page
+          // "2 of 3" counter (a plausible-looking coincidence, since DATA
+          // INDEX genuinely does paginate) until a user confirmed live
+          // they're real arrow icons on the actual cockpit texture, not
+          // digits at all. Only these exact characters are special-cased,
+          // regardless of what colorMap.s says otherwise -- an actual
+          // typed digit 2 or 3 elsewhere in a different color still
+          // renders as itself.
           const symbolGlyph = colorLetter === "s" ? SYMBOL_FONT_GLYPHS[ch] : undefined;
+          let align;
           if (symbolGlyph) {
-            ch = symbolGlyph;
-            color = "amber";
+            ch = symbolGlyph.char;
+            color = symbolGlyph.color;
+            align = symbolGlyph.align;
           }
-          line[i] = { char: ch, large: source.large, reverse: false, flash: false, underline: false, color };
+          line[i] = { char: ch, large: source.large, reverse: false, flash: false, underline: false, color, align };
         }
       }
     }
@@ -318,9 +375,79 @@ function fillTemplate(template, cdu, line) {
   return template.replace("{cdu}", String(cdu)).replace("{line}", String(line));
 }
 
-// ToLiss's 's' screen color doubles as a "mandatory field, not yet
-// entered" symbol font -- see the long comment in _recomputeColoredRow().
-const SYMBOL_FONT_GLYPHS = { E: "▯", A: "[", B: "]" };
+// ToLiss's 's' screen color doubles as a small symbol font -- see the long
+// comment in _recomputeColoredRow(). Each entry carries its own color:
+// E/A/B are "mandatory field" placeholders (amber, matching real hardware's
+// warning convention), 2/3 are plain page-navigation chrome (white, not a
+// warning) -- unlike the shared "amber" this table used to hardcode for
+// every entry.
+const SYMBOL_FONT_GLYPHS = {
+  E: { char: "▯", color: "amber" },
+  // Confirmed live 2026-08-30: the bracket placeholder renders cyan on the
+  // real sim display, not amber -- amber here was carried over from the
+  // box-glyph's own confirmed amber on the (unverified) assumption both
+  // are the same "mandatory field" warning color; they aren't. Matches
+  // colorMap.b (Airbus's cyan-ish "blue"), suggesting this placeholder is
+  // really rendered in the 'b' hue on real hardware, just delivered
+  // through the 's' text channel like the other symbol-font characters.
+  A: { char: "[", color: "cyan" },
+  B: { char: "]", color: "cyan" },
+  // Plain U+2190/U+2192 "arrows" block, not the U+25C0/U+25B6 "triangle"
+  // block first tried here -- B612 Mono (this screen's own font, see
+  // css/mcdu.css's .ch) has no glyphs for either, but the triangle pair
+  // fell back to two genuinely *different* fonts in the fallback chain
+  // (confirmed live 2026-08-30: the left one rendered noticeably larger
+  // than the right, a font-substitution mismatch, not a sizing bug in
+  // this app) and looked like solid triangles rather than arrows anyway.
+  // Plain directional arrows are common enough to resolve consistently
+  // from whichever single fallback font covers them. They sit in adjacent
+  // columns with no blank column between them (that's just where ToLiss's
+  // own raw text puts the two characters they replace), and each glyph's
+  // ink already reaches close to its own cell's edge, so the screen's
+  // usual 1px column-gap (see css/mcdu.css's .mcdu-screen) reads as the
+  // two arrows touching -- align nudges each one toward its own cell's
+  // *outer* edge (away from the other arrow) to open up a visible gap
+  // between them without changing column-gap globally for every other
+  // character on the whole screen.
+  2: { char: "←", color: "white", align: "start" },
+  3: { char: "→", color: "white", align: "end" },
+  // A second, unrelated left/right arrow pair -- confirmed live
+  // 2026-08-30 on an F-PLN page: "0" immediately before a waypoint name
+  // (e.g. "0RUNGA", the 'b'/cyan-colored name right after it) is really a
+  // left arrow, and "1" immediately after one (e.g. "ABEAM PTS" + "1") is
+  // a right arrow -- both colored cyan, matching the adjacent waypoint
+  // text, not white like the title's page-nav arrows above. These are
+  // inline route-editing chrome (direct-to / abeam-point style markers),
+  // a different real concept from the title's page-turn arrows, which is
+  // presumably why ToLiss encodes them as different characters entirely
+  // rather than reusing 2/3. The same "'s' isn't a color, it's a symbol
+  // font" caution applies here too: 0/1 are common digits, so this is a
+  // wider net than E/A/B/2/3's less-common characters -- flag if a real
+  // numeric 0 or 1 ever legitimately shows up in the 's' color somewhere.
+  0: { char: "←", color: "cyan" },
+  1: { char: "→", color: "cyan" },
+  // A third arrow, confirmed live 2026-08-30: "4" immediately before
+  // ERASE (cont6s="4 ", cont6a=" ERASE...") is a left arrow pointing at
+  // the ERASE prompt's own LSK, colored amber to match ERASE itself --
+  // this app's own SYMBOL_FONT_GLYPHS entry had flagged "4" as an
+  // unmapped, unexplained sighting before this was confirmed. No matching
+  // right-arrow character found yet for the equivalent INSERT* prompt on
+  // the same row -- it uses a literal "*" instead, not an arrow, so
+  // there may not be one to find.
+  4: { char: "←", color: "amber" },
+};
+
+// AirbusFBW/MCDU{cdu}VertSlewKeys -> [up glyph, down glyph] -- see
+// _applyVertSlewKeys()'s own comment for what's confirmed vs inferred.
+// Plain U+2191/U+2193 arrows, not solid triangles -- same reasoning as
+// SYMBOL_FONT_GLYPHS's own 2/3 entries (a triangle pair risks falling
+// back to two visibly different fonts/sizes; these render consistently).
+const VERT_SLEW_GLYPHS = {
+  0: [" ", " "],
+  1: ["↑", "↓"],
+  2: [" ", "↑"],
+  3: [" ", "↓"],
+};
 
 /**
  * Decodes one of ToLiss's screen-content datarefs: base64 -> UTF-8 ->

@@ -484,9 +484,17 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
 }
 
 .mcdu-screen {
+  position: relative; /* positioning context for .mcdu-vert-slew below */
   background: var(--screen-bg);
   border-radius: 6px;
-  padding: 10px 14px;
+  /* Extra bottom padding carves out real, dedicated space for
+     .mcdu-vert-slew below the 14-row grid entirely — the first two
+     attempts at this indicator both ended up overlapping real row
+     content (see .mcdu-vert-slew's own comment) because there's no spare
+     row anywhere in the 14-row model to put it in otherwise. Sized to
+     comfortably fit that badge's own compact height plus a little
+     breathing room, not a full row height. */
+  padding: 10px 14px calc(10px + var(--mcdu-char-size) * 0.85);
   /* Sunken/debossed look for the display glass itself — same inset-shadow
      logic as the key deboss theme (dark shadow offset toward bottom-right
      reads as a bowl lit from the top-left; faint light counter-shadow is
@@ -600,6 +608,56 @@ body[data-panel="fcu"] .mcdu-only-control { display: none; }
 .ch.underline { text-decoration: underline; }
 .ch.flash { animation: mcdu-flash 1s steps(1) infinite; }
 @keyframes mcdu-flash { 50% { opacity: 0; } }
+/* Nudges a cell's own glyph toward one edge instead of centering it — used
+   for a pair of adjacent single-character symbol substitutions (ToLiss's
+   left/right page-nav arrows, see mcdu-adapter.js's SYMBOL_FONT_GLYPHS)
+   whose glyphs reach close to their own cell edges, making the screen's
+   usual 1px column-gap (see .mcdu-screen above) read as touching rather
+   than two distinct characters. "start"/"end" push each one toward its
+   own cell's *outer* edge (away from the other), opening a visible gap
+   between them without changing column-gap globally for every other
+   character on the screen. */
+.ch.align-start { justify-content: flex-start; }
+.ch.align-end { justify-content: flex-end; }
+
+/* Up/down scroll-availability indicator (McduAdapter's onVertSlewChange) —
+   a floating badge, not part of the character grid, so it can never
+   overwrite real row content the way stamping it into grid cells did
+   before (a real Airbus MCDU can show right-aligned text, e.g. "INSERT*",
+   on the very row this would otherwise have shared). A first attempt at
+   floating it above the scratchpad row still visually overlapped that
+   same row's real content (there's no row height to spare inside the
+   14-row grid, only its own padding) — .mcdu-screen's own bottom padding
+   now carves out genuine dedicated space below the whole grid for this,
+   so it sits on its own line rather than sharing one with real text.
+   Side-by-side (not stacked): real Airbus hardware shows these two
+   arrows next to each other, not one above the other. Plain text, no
+   background pill — that was a defensive hedge from when this still
+   risked landing on top of real content, which no longer applies now
+   that it has genuinely dedicated space; visually it just looked like a
+   random dark box sitting on the CRT-style screen glass. */
+.mcdu-vert-slew {
+  position: absolute;
+  right: 10px;
+  bottom: 4px;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 4px;
+  line-height: 1;
+  font-family: "B612 Mono", ui-monospace, "DejaVu Sans Mono", "Courier New", monospace;
+  font-size: calc(var(--mcdu-char-size) * 0.8);
+  color: var(--c-white);
+  pointer-events: none;
+}
+/* Hidden outright (not just blank glyphs) when neither arrow applies —
+   otherwise an always-visible empty dark pill would sit in the corner
+   even on pages with nothing to scroll. Toggled from mcdu-screen.js's
+   _renderVertSlew(), not a CSS :empty check — this element always has its
+   two glyph <span> children, "empty" here means both hold a blank space. */
+.mcdu-vert-slew.mcdu-vert-slew--none {
+  display: none;
+}
 
 .ch.color-black   { color: var(--c-black); }
 .ch.color-cyan    { color: var(--c-cyan); }

@@ -77,13 +77,30 @@ export class XPlaneClient {
    * @param {string[]} names
    * @returns {Promise<Map<string, number>>} name -> id, missing names simply absent
    */
-  async resolveDatarefIds(names) {
-    return this._resolveIds("datarefs", names);
+  /**
+   * @param {string[]} names
+   * @param {{fallback?: boolean}} [opts] fallback (default true) does the
+   *   slow single-name-at-a-time lookup below for names the bulk list
+   *   didn't have — pass `false` for a caller where "missing from the
+   *   bulk list" is *expected* to mean "genuinely doesn't exist" for most
+   *   of the names it's resolving, not "might be a rare alias." ToLiss's
+   *   coloredLines MCDU screen is exactly that: up to ~150 (row, source,
+   *   color) combinations per connect, most of which are absent from the
+   *   bulk list *by design* (most rows only populate 1-2 of the 7 color
+   *   channels) — running all of those through the sequential fallback
+   *   loop meant a real connect could fire 100+ one-at-a-time 404 round
+   *   trips, each blocking the next, noticeably slowing down Connect and
+   *   flooding the console — confirmed live 2026-08-30 from a user's own
+   *   devtools output. See _resolveIds()'s own comment for what the
+   *   fallback is actually *for* (a narrow, confirmed real case).
+   */
+  async resolveDatarefIds(names, opts) {
+    return this._resolveIds("datarefs", names, opts?.fallback ?? true);
   }
 
-  /** @param {string[]} names @returns {Promise<Map<string, number>>} */
-  async resolveCommandIds(names) {
-    return this._resolveIds("commands", names);
+  /** @param {string[]} names @param {{fallback?: boolean}} [opts] @returns {Promise<Map<string, number>>} */
+  async resolveCommandIds(names, opts) {
+    return this._resolveIds("commands", names, opts?.fallback ?? true);
   }
 
   /**
@@ -97,7 +114,7 @@ export class XPlaneClient {
    * case this needs to degrade gracefully from — see README "Known
    * limitations" on unresolved keys being disabled, not fatal.
    */
-  async _resolveIds(kind, names) {
+  async _resolveIds(kind, names, fallback = true) {
     const map = new Map();
     if (names.length === 0) return map;
     const wanted = new Set(names);
@@ -106,6 +123,7 @@ export class XPlaneClient {
     for (const entry of this._allCache[kind]) {
       if (wanted.has(entry.name)) map.set(entry.name, entry.id);
     }
+    if (!fallback) return map;
 
     // Names the bulk list didn't have: X-Plane sometimes accepts a
     // single-name filter query for a name that never appears in the bulk
