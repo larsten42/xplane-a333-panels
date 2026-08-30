@@ -135,6 +135,20 @@ description — devtools access isn't a realistic ask on a tablet. The log
 is module-level in `app.js`, not tied to one `XPlaneClient` instance, so
 it survives across manual Reconnect clicks too.
 
+**Nagle's algorithm, on both proxy hops**: a further report from the same
+user ("Jerry"), 2026-08-30 — inputs feeling like they get buffered, then
+arrive at the sim in a burst. `tools/mcdu-server.js`'s proxy is a
+hand-rolled raw-socket relay (see "How it works" above), not a library, on
+both hops: the incoming tablet connection (`server.on("upgrade", ...)`'s
+own `socket`) and the outgoing connection to X-Plane
+(`connectUpstream()`'s `socket`). Neither called `setNoDelay(true)`, so
+both defaulted to Node's normal Nagle-on behavior — exactly wrong for this
+traffic (a steady stream of tiny, latency-sensitive messages, one per
+keypress or knob tick, not a bulk transfer), and a textbook cause of the
+reported symptom via the classic Nagle/delayed-ACK interaction. Fixed by
+calling `setNoDelay(true)` on both sockets right after they're
+established.
+
 ## Progressive Web App
 
 `manifest.webmanifest` + `icons/icon.svg` give the MCDU/EFIS/FCU/Radio/
@@ -322,11 +336,13 @@ by diff, not just by design, when this was built).
 - **Color mapping is the one open, lower-confidence gap**: `g` (green)
   and `w` (white) are confirmed live against real content; `a`/`y`
   (amber/yellow) and `b` (assumed to be Airbus's cyan-ish "blue") are
-  standard-convention guesses not yet seen live; `s` is the least
-  confident — seen only on a small page-number readout, suggesting a
-  dim/small white variant rather than a distinct hue. None of this
-  affects functionality, only which CSS color class a character gets —
-  see the profile's own `_note_provenance`.
+  standard-convention guesses not yet seen live; `s` isn't really a color
+  at all — every live sighting of it so far has turned out to be one of
+  the symbol-font glyphs below (box/bracket placeholders, page-nav
+  arrows), so `colorMap.s` only matters for whatever `s`-colored text
+  isn't one of those specific characters. None of this affects
+  functionality, only which CSS color class a character gets — see the
+  profile's own `_note_provenance`.
 - **No reverse/flash/underline** — no dataref for any of those was found
   for this screen, so ToLiss MCDU text always renders plain.
 - **Box-glyph placeholder**: a real Airbus MCDU shows a row of small amber
@@ -335,8 +351,7 @@ by diff, not just by design, when this was built).
   characters, but only in the `s` color — confirmed live 2026-08-29 by
   reading the raw `cont1s`/`label1w` dataref bytes behind a live "EEEEEE"
   report. This is contextual, not a universal "E means box" rule: a real
-  typed E (e.g. in the scratchpad) still renders as E, and `s` is also
-  used for legitimate small text elsewhere (a page-number readout).
+  typed E (e.g. in the scratchpad) still renders as E.
   `mcdu-adapter.js`'s `_recomputeColoredRow()` special-cases only the
   exact `(char="E", colorLetter="s")` pair, substituting a box glyph
   (`▯`) in amber — see the profile's own `_note_on_box_placeholder`.
@@ -348,7 +363,13 @@ by diff, not just by design, when this was built).
   (`cont3s` = `"...A B A B"`) — `A` is the left bracket half, `B` the
   right. `mcdu-adapter.js`'s `SYMBOL_FONT_GLYPHS` table maps `E`→▯ and
   `A`/`B`→`[`/`]` for the `s` channel only; real letters A/B still
-  render as themselves in every other color — see the profile's own
+  render as themselves in every other color. Color corrected live
+  2026-08-30: this one is cyan on the real display (matching
+  `colorMap.b`), not amber — the initial amber was an unverified
+  assumption carried over from the box glyph's own confirmed amber, on
+  the theory both placeholders shared one "mandatory field" warning
+  color; they don't. The box glyph's own amber hasn't had this same
+  live-color scrutiny applied to it yet — see the profile's own
   `_note_on_bracket_placeholder`.
 - **Degree symbol**: another classic Airbus/Boeing CDU font quirk — a
   literal backtick byte (`` ` ``, 0x60) means °, not an actual backtick.
@@ -357,12 +378,71 @@ by diff, not just by design, when this was built).
   box glyph above, this remap isn't color-specific — `decodeColoredChars()`
   replaces every backtick with ° regardless of color, since a literal
   backtick has no legitimate use on an MCDU screen.
-- **Page-number readout looks like arrows, but isn't a bug**: the small
-  `23`-style readout in the title's top-right corner (page 2 of 3) is
-  literal ASCII digits on the wire (confirmed live) — ToLiss's own
-  cockpit texture just renders that field in a small stylized font that
-  can look like a pair of left/right arrows. This app's decoding and
-  rendering are already correct; nothing was changed for it.
+- **Up/down scroll-availability arrows**: a real Airbus MCDU shows a small
+  up/down arrow indicator (`↑`/`↓`, not solid triangles — same font-
+  fallback-mismatch reasoning as the left/right arrows below) in the
+  screen's bottom-right corner whenever a list (e.g. F-PLN) has more
+  content than fits on screen — reported missing from the web panel
+  despite being visible in the real cockpit. It turned out to live
+  entirely outside the row/color grid every other screen element above
+  goes through: `AirbusFBW/MCDU{cdu}VertSlewKeys`, a single plain int
+  dataref a user found live 2026-08-30, `0`/`1`/`3` confirmed against a
+  real scrollable F-PLN page as neither/both/down-only (`2`, up-only,
+  inferred by elimination — not independently confirmed). First
+  implementation stamped the glyphs directly into the last two columns of
+  the last content row — wrong, confirmed live 2026-08-30 by a real
+  `"INSERT*"` message (F-PLN, pending revision to confirm) landing on
+  that exact row and coming through as `"INSER"` with its last two
+  characters overwritten. `McduAdapter`'s `onVertSlewChange` callback now
+  reports this separately (`_applyVertSlewKeys()` no longer touches
+  `this.screen` at all), rendered by `McduScreenView` as its own floating
+  `.mcdu-vert-slew` badge — positioned just above the scratchpad row with
+  a dark backdrop pill behind it, both so it can't be silently mistaken
+  for corrupted text again and as a hedge against overlapping real content
+  in some edge case this fix didn't anticipate — see the profile's own
+  `_note_on_vert_slew_keys`.
+- **Page-navigation arrows, misdiagnosed once before landing on the real
+  answer**: the small `23`-style readout in the title's top-right corner
+  (e.g. DATA INDEX showing "23") was first read (2026-08-29) as a literal
+  "page 2 of 3" counter — a plausible-looking coincidence, since DATA
+  INDEX genuinely does paginate, so the digit interpretation kept
+  producing sensible-looking numbers every time it was spot-checked. A
+  user confirmed live 2026-08-30, looking directly at the real cockpit
+  texture, that these are actual left/right arrow *icons*, not digits at
+  all — the same kind of "app displayed the wrong thing while a web-panel
+  report first surfaced it" pattern as `VertSlewKeys` above, just caught a
+  layer deeper (a genuine misread of already-decoded text, not a whole
+  missing dataref). `2`→`←`/`3`→`→` are now two more entries in
+  `SYMBOL_FONT_GLYPHS` (plain arrow glyphs, not the solid-triangle pair
+  first tried — this screen's own B612 Mono font has neither, and the
+  triangle pair happened to fall back to two visibly different-sized
+  fonts; see `SYMBOL_FONT_GLYPHS`'s own comment) — see the profile's own
+  `_note_on_page_nav_arrows` for the full history, including why the
+  original "literal digits" conclusion looked so convincing for as long
+  as it did.
+- **A second, unrelated left/right arrow pair — inline route-editing
+  markers, not page navigation**: confirmed live 2026-08-30 on an F-PLN
+  page that `0` immediately before a waypoint name (e.g. `RUNGA`) is a
+  left arrow, and `1` immediately after one (e.g. `ABEAM PTS`) is a right
+  arrow — both cyan, matching the adjacent waypoint name's own color,
+  unlike the title's white page-nav arrows above. A real, different
+  concept (direct-to / abeam-point style route markers vs. page turning),
+  which is presumably why ToLiss uses entirely different characters for
+  each rather than reusing `2`/`3`. `0`/`1` are common digits, though, so
+  this special-casing has a wider blast radius than `E`/`A`/`B`/`2`/`3`'s
+  less-common characters — flag it if a real numeric `0` or `1` ever
+  legitimately shows up in the `s` color somewhere. See the profile's own
+  `_note_on_route_arrows`.
+- **A third arrow, amber this time**: `4` immediately before `ERASE`
+  (e.g. `4ERASE` on the F-PLN row that also shows `INSERT*`) is a left
+  arrow pointing at the ERASE prompt's own LSK, colored amber to match
+  `ERASE` itself. This one was actually spotted first as an unexplained
+  stray `4` with no obvious adjacent text while investigating the `0`/`1`
+  pair above, and only confirmed once a user reported it rendering
+  literally instead of an arrow. No matching right-arrow found for the
+  equivalent `INSERT*` prompt on the same row — it uses a literal `*`,
+  not an arrow, so there may not be one to find. See the profile's own
+  `_note_on_route_arrows`.
 - **Real Airbus keypad, not the stock profile's**: ToLiss's actual key
   set doesn't include CLB/CRZ/DES/HOLD/EXEC/FIX/LEGS/DEP_ARR (Boeing CDU
   concepts the stock default-FMS profile happens to also expose) and
@@ -380,7 +460,35 @@ by diff, not just by design, when this was built).
   register. A short tap on the baro knob pulls (engage STD); press-and-hold
   (~400ms) pushes (revert to the selected QNH).
 - **Bearing-pointer levers** (BRG1/BRG2): drag or tap a third to swing the
-  lever between ADF/OFF/VOR.
+  lever between ADF/OFF/VOR. The **stock A330**'s "unaccounted-for value
+  `2`" mystery mentioned in earlier versions of this doc is resolved, and
+  turned out not to be a bug at all: confirmed live 2026-08-30 (cycling
+  `EFIS_1_pilot_sel_adf`/`off`/`vor` and reading
+  `EFIS_1_selection_pilot`/`_2_` back after each) that ADF/OFF/VOR really
+  are `0`/`1`/`3` on this aircraft, exactly as the profile already had
+  them — `2` is just whatever this dataref happens to boot at before any
+  of the three real commands has ever fired, never a legitimate switch
+  position, so the original mapping needed no change at all.
+- **The same generic datarefs/commands turned out to also drive ToLiss's
+  real BRG1/BRG2** (previously totally unwired — its own name-matching
+  pass only searched for "BRG"-named things and these aren't, since
+  they're generic, not `AirbusFBW`-namespaced) — but with a real trap
+  along the way: firing `EFIS_1_pilot_sel_vor` via this app's own command
+  path does move the dataref to `3` and does *look* like VOR at a glance,
+  but a user confirmed live 2026-08-30 that's not what the real physical
+  switch actually settles on — manually operating it in the cockpit reads
+  `2` for VOR instead, matching the user's own original report. Forcing a
+  command and watching a dataref move isn't proof it reproduces the exact
+  value a genuine physical operation reaches, the same lesson this
+  project has already hit elsewhere (e.g. the RMP SEL indicator's several
+  wrong guesses) — `efis-toliss-airbus.json` reads back the user's
+  confirmed `0`/`1`/`2`, not this app's own `0`/`1`/`3` observation. Since
+  the command was confirmed to be the *wrong write path* for this
+  position, not just mislabeled, ADF/OFF still use their (correct)
+  commands, but VOR now uses a new toggleSwitch position shape,
+  `writeValue`, which writes `2` straight to the stateDataref instead of
+  firing the misbehaving command at all — see `efis-adapter.js`'s own top
+  comment.
 - **Baro concentric ring**: the outer ring around the baro knob is a
   direct two-position click target — click either half to select in Hg or
   hPa outright, rather than toggling.
@@ -526,14 +634,53 @@ VOR2/ADF1/ADF2, all live-verified against a running ToLiss A330
 still open. Real, mechanical differences from the stock profile, not just
 different names for the same shapes:
 
-- **Tuning is command-based, not direct-write**: writability of the
-  readouts' own datarefs under ToLiss isn't confirmed (or what validation
-  a write would get), unlike the stock A330's standby datarefs. The tune
-  knob instead fires RMP1FreqUp/DownLrg (coarse) and RMP1FreqUp/DownSml
-  (fine) directly, one press per detent — `src/rmp-panel.js` checks
-  `EfisAdapter.hasWritableEncoder(name)` per readout and falls back to
-  this path when there's no writable encoder, rather than assuming every
-  profile can offer one.
+- **Tuning is command-based for most channels — but VHF1/VHF2 turned out
+  to be genuinely direct-write after all**: `AirbusFBW/RMP1Freq`/
+  `RMP1StbyFreq` (the AirbusFBW-namespaced ones) really aren't writable —
+  that part held up. But a live user report questioning an earlier
+  (wrongly tested) "not writable" conclusion for the *generic*
+  `sim/cockpit2/radios/actuators/com{1,2}_standby_frequency_hz_833` led to
+  re-testing it properly: confirmed live 2026-08-30 over the real
+  websocket `dataref_set_values` path (the original test had used the
+  REST endpoint with a guessed, apparently wrong, body shape) that it's
+  genuinely writable *and* drives the real RMP display — the same generic
+  dataref the stock A330 profile and the Radio panel both already use.
+  `COM1`/`COM2` now declare a `standbyRaw` datarefs key (a plain number,
+  separate from the `standby` key's display text) plus a real
+  `encoder.writeDataref`/`valueKey` pointing at it, so
+  `EfisAdapter.hasWritableEncoder("COM1"/"COM2")` is true and the tune
+  knob goes through the same instant `adjustReadoutValue()`/
+  `nextStandbyRaw()` path the stock A330 already uses for its own
+  standby datarefs — no command queue, no per-press rate ceiling, none of
+  the trade-offs below. `VHF3`/`HF1`/`HF2`/the STBY NAV backup functions
+  have no such generic mirror (X-Plane's core sim only simulates VHF COM
+  radios at all) and still fire `RMP1FreqUp/DownLrg`(coarse)/
+  `RMP1FreqUp/DownSml`(fine) directly, one press per detent —
+  `src/rmp-panel.js` checks `EfisAdapter.hasWritableEncoder(name)` per
+  readout and falls back to this path only when there's no writable
+  encoder, so both shapes coexist cleanly on the same tune knob depending
+  on which channel is currently selected.
+- **The tune knob's drag gesture, and a real X-Plane command-queue
+  ceiling found chasing "it's too slow"**: a long live-testing thread on
+  ToLiss's tune knob feeling glacially slow led to `<fcu-knob>`'s
+  `rate-drag` mode (a spring-centered hold-and-accelerate gesture,
+  replacing the old fixed "N px of drag = 1 detent" model for this knob
+  specifically — see `vendor/README.md`'s `fcu-instruments.js` entry for
+  the full mechanism) and, independently, a real discovery about
+  X-Plane's own command handling: repeatedly activating the *same*
+  command faster than its own `duration` creates a real ~6.5/sec ceiling
+  on the websocket `command_set_is_active` path (confirmed live
+  2026-08-30 — see `docs/xplane-web-api-notes.md`'s own section on this),
+  and beyond that, X-Plane keeps *draining a real queue* for a while after
+  input stops, not just dropping excess presses (measured: 25/sec left
+  ~430ms of continued movement after releasing; 10/sec left none at all).
+  `EfisAdapter.press()` now takes an optional short `duration` for
+  exactly this (used by the command-based channels above, not the
+  now-direct-write VHF1/VHF2), and the tune knob's `rate-max-hz` is
+  deliberately capped at `10` — a live user call favoring instant-stop
+  responsiveness over maximum speed for the command-based channels, once
+  VHF1/VHF2's own speed problem turned out to have a completely different
+  (and better) fix above.
 - **Every channel aliases the same dataref pair on purpose**: ToLiss's
   RMP1 acts as a single display/tune surface shared across whichever
   channel is currently selected, not independent per-channel storage the
@@ -860,14 +1007,18 @@ with their own custom implementation under an entirely different
 namespace (`laminar/B738/...`-style paths won't even exist the same way),
 so none of the above shortcuts apply; expect to discover everything from
 scratch with `tools/discover.mjs` the way the original A330 profiles were
-built. `config/profiles/efis-toliss-airbus.json` is a first pass at this
-for ToLiss's Airbus EFIS — unlike every other profile in this repo, it was
-built by name-matching against a public dataref/command list rather than
-a live session (none was available), so its own `_note`/`_gap_*` fields
-flag exactly what's confirmed vs. deduced vs. genuinely missing (the LS
-button, BRG1/BRG2 selector, and baro unit-ring toggle had no plausible
-match at all). Wire into `AIRCRAFT_EFIS_PROFILES` in `app.js` the same way
-as `efis-a333.json`; verify every row with `tools/discover.mjs` before
+built. `config/profiles/efis-toliss-airbus.json` started this way for
+ToLiss's Airbus EFIS — unlike every other profile in this repo, its first
+pass was built by name-matching against a public dataref/command list
+rather than a live session (none was available at the time), so its own
+`_note`/`_gap_*` fields originally flagged the LS button, the BRG1/BRG2
+selectors, and the baro unit-ring toggle as having no plausible match at
+all. All three have since been found and live-verified (BRG1/BRG2 turned
+out to share the stock A330's own generic, non-`AirbusFBW` datarefs —
+see this section's own "Bearing-pointer levers" entry above) — see the
+profile's own history for what, if anything, is still genuinely open.
+Wire into `AIRCRAFT_EFIS_PROFILES` in `app.js` the same way as
+`efis-a333.json`; verify every row with `tools/discover.mjs` before
 trusting it. Note this only covers EFIS — the Radio panel still assumes a
 data/interaction shape ToLiss doesn't share, so porting it needs real
 code changes, not just a profile. RMP+ACP and MCDU both turned out to be
@@ -1048,9 +1199,6 @@ tools/
 - LVLCH on the FCU display has no confirmed driving dataref yet.
 - HDG's managed/selected display doesn't dash out like SPD's does yet —
   not yet confirmed whether it should.
-- BRG1/BRG2's underlying dataref (`EFIS_1_selection_pilot`/`_2_`) can read
-  a value (`2`) the current ADF/OFF/VOR mapping doesn't account for —
-  cause not yet identified.
 - The baro concentric ring's click target on the vendored EFIS knob is
   quite small — a Design polish item, not an instrumentation gap.
 - RMP+ACP, **stock A330 profile only**: VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO
@@ -1064,10 +1212,30 @@ tools/
   (presumably LS/MKR/VOR2/ADF1/ADF2/SAT1/SAT2) are unconfirmed and unwired
   — low priority, since the vendored UI has no MIC key for most of them
   anyway.
-- ACP reception volume writes are currently rejected by X-Plane itself
-  (confirmed live "incompatible_data" error on these specific
-  `double`-typed datarefs) — likely an X-Plane Web API bug, not fixable
-  here; see `config/profiles/rmp-acp-a333.json`'s `_gap_acp_volume_write`.
+- ACP reception volume writes are currently rejected by X-Plane itself on
+  the **stock A330 profile** (confirmed live "incompatible_data" error on
+  these specific `double`-typed datarefs) — likely an X-Plane Web API bug,
+  not fixable here; see `config/profiles/rmp-acp-a333.json`'s
+  `_gap_acp_volume_write`. The ToLiss profile has since moved to a
+  different, genuinely writable mechanism (`AirbusFBW/ACP1RotaryPositions`,
+  a shared array) and isn't affected by this.
+- ToLiss RMP+ACP: VHF2 tuning is command-only, not direct-write, unlike
+  VHF1 (COM1) which writes `sim/cockpit2/radios/actuators/
+  com1_standby_frequency_hz_833` directly. Investigated 2026-08-30: reading
+  that dataref is transparently multiplexed across whichever channel is
+  selected, but writing it only reaches ToLiss's internal state while VHF1
+  is actually selected — confirmed with a clean live test (write silently
+  had zero effect across 10 polls over 2 full seconds with VHF2 selected,
+  vs. sticking instantly under identical conditions with VHF1 selected). A
+  live report offered an alternative theory worth revisiting: maybe
+  `..._hz_833` specifically is the wrong dataref for this, not a
+  fundamental selection-gating limitation — untested is whether the
+  non-`_833` variant (`sim/cockpit2/radios/actuators/
+  com1_standby_frequency_hz`) or some other generic COM dataref behaves
+  differently while VHF2 is selected. `AirbusFBW/DRAIMS1/VHFStbyFreqs` (a
+  3-element float_array holding real independent VHF1/VHF2/VHF3 standby
+  values, confirmed live) is very likely where VHF2's real state actually
+  lives, but it's `is_writable:false` via X-Plane's Web API either way.
 - EFIS/FCU/Radio/RMP+ACP support in the mock server, so all four can be
   developed/tested without a running X-Plane instance too.
 - Transponder mode/on-off on the Radio panel, once it's decided how the

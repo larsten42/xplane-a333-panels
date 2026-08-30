@@ -1,14 +1,14 @@
 # X-Plane A330 Panels
 
-Web-based cockpit panels for X-Plane 12's stock aircraft — a full **MCDU**,
-**EFIS**, and **FCU** set for the Airbus A330, an early **RMP+ACP** (radio
-management/audio control) panel for the same aircraft, **MCDU**-only
-support for the Boeing 737-800, experimental **MCDU**, **EFIS**, and
-**RMP+ACP** profiles for the ToLiss Airbus add-on, and a **Radio** stack
-(COM/NAV/ADF/DME) that works with any of X-Plane's default aircraft — all
-in one page, switched with a **Panel** selector (and an **Aircraft**
-selector for which airframe to use). Runs in any browser, no X-Plane
-plugin to install.
+Web-based cockpit panels for X-Plane 12 — a full **MCDU**, **EFIS**, and
+**FCU** set for the stock Airbus A330, an **RMP+ACP** (radio management/
+audio control) panel for the same aircraft, **MCDU**-only support for the
+stock Boeing 737-800, live-verified **MCDU**, **EFIS**, and **RMP+ACP**
+profiles for the ToLiss Airbus add-on, and a **Radio** stack (COM/NAV/
+ADF/DME) that works with any of X-Plane's default aircraft — all in one
+page, switched with a **Panel** selector (and an **Aircraft** selector for
+which airframe to use). Runs in any browser, no X-Plane plugin to
+install.
 
 ## Quick start
 
@@ -53,15 +53,15 @@ Add to Home screen** adds one in a tap — see [Extras](#extras).
   and just because someone went and mapped it out.
 - **EFIS** — Airbus A330 (stock), plus an **experimental** profile for the
   ToLiss Airbus add-on. The ToLiss one started as a first pass built by
-  matching against a public dataref/command reference; most of it has
-  since been live-verified against a running ToLiss Airbus (CSTR/WPT/VOR.D/
-  NDB/ARPT/FD/LS buttons, the baro knob and its STD/QNH push-pull and unit
-  ring, and both ND selector knobs — MODE and RANGE are both directly
-  writable on this aircraft, unlike the stock A330's MODE, which only has
-  paced step commands). BRG1/BRG2 (the ADF/OFF/VOR bearing-pointer
-  selectors) are still unwired — no matching command or dataref found at
-  all yet. See [`CONTRIBUTING.md`](CONTRIBUTING.md) if you can help verify
-  the rest.
+  matching against a public dataref/command reference; it's since been
+  live-verified against a running ToLiss Airbus (CSTR/WPT/VOR.D/NDB/ARPT/
+  FD/LS buttons, the baro knob and its STD/QNH push-pull and unit ring,
+  both ND selector knobs — MODE and RANGE are both directly writable on
+  this aircraft, unlike the stock A330's MODE, which only has paced step
+  commands — and the BRG1/BRG2 bearing-pointer selectors, which turned out
+  to share the stock A330's own generic datarefs/commands rather than
+  needing anything ToLiss-specific). See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+  if there's still something you'd like to help verify.
 - **FCU** — Airbus A330 (stock) only; Boeing's real hardware is different
   enough (an MCP instead of an FCU) that supporting the 737 means a new
   panel design, not a config change. Every button, knob, and display is

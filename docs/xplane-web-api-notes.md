@@ -104,8 +104,73 @@ body shape):
 
 `duration` appears to simulate a press-then-release after N seconds, which is
 exactly a CDU keypress. This project always uses this form rather than the
-REST `/command/{id}/activate` endpoint, whose exact body schema wasn't
-pinned down during research.
+REST `/command/{id}/activate` endpoint. That endpoint's body shape *is* now
+pinned down (see the next section) — this project still defaults to the
+websocket form for everything except one-off discovery/diagnostic scripts,
+mainly for symmetry with the rest of the app's traffic, not because the
+REST form is missing or broken.
+
+### Repeated activations of the same command: duration creates a real ceiling
+
+Confirmed live 2026-08-30, chasing down a "the RMP tune knob's fast-repeat
+mode is still slow" report: firing `command_set_is_active` for the *same*
+command repeatedly, closer together than the `duration` each activation
+requests, drops most of the repeats — X-Plane appears to treat a command as
+still "active" for the full requested `duration`, and a re-activation while
+already active is a no-op rather than a fresh press. This project's default
+`duration` (0.15s, `XPlaneClient.activateCommand()`) creates a real ceiling
+of roughly **6.5 activations/sec** for the *same* command id on this path —
+comfortably below that (tested clean at 5/sec) and every activation lands;
+push past it (tested at 7-10/sec) and roughly a quarter to a third get
+silently dropped, worsening as the rate climbs further. This is a discrete
+step command, though, not a hold-to-repeat one — it doesn't need to stay
+"active" anywhere near 150ms, so requesting a much shorter `duration` (e.g.
+25ms) raises the real safe ceiling proportionally (tested clean at 25/sec
+with `duration: 0.025`, so long as `duration` stays comfortably under the
+gap between presses) — see `src/rmp-panel.js`'s own tune-knob wiring and
+`EfisAdapter.press()`'s optional second argument for where this is applied.
+
+**The REST `/command/{id}/activate` endpoint's own body shape**, confirmed
+live the same session (not documented anywhere found during earlier
+research): `POST /api/v2/command/{id}/activate` with a JSON body
+`{ "duration": <seconds> }` — `duration` is required; omitting it 400s.
+Initial testing suggested this endpoint *didn't* share the same-command
+repeat-collapsing behavior described above (rapid REST-fired repeats
+registered cleanly at rates that dropped heavily over the websocket) — but
+that comparison was confounded by testing the REST path with `curl` (a
+real, independent OS process per request) against the websocket path with
+a Node script using Node's own built-in `WebSocket` client, which this
+doc's own "Node's built-in WebSocket client can't talk to X-Plane
+reliably" section below already documents as unreliable under rapid-fire
+conditions — so the apparent REST-vs-websocket difference may partly (or
+entirely) reflect that transport quirk rather than a genuine difference in
+how X-Plane itself processes the two endpoints. What *is* solid, because it
+matches a live user's own reported real-world symptom through the actual
+production path (real browser, real proxy, real websocket, no Node
+built-in `WebSocket` anywhere in that chain): the ~6.5/sec-with-150ms-
+duration ceiling, and the fact that shortening `duration` raises it. Re-test
+the REST-vs-websocket comparison specifically with a non-Node HTTP+WS
+client (or the proxy's own hand-rolled socket code) before trusting *that*
+narrower claim.
+
+### A real command queue drains for a while after input stops, separate from the duration ceiling above
+
+Confirmed live 2026-08-30, same investigation, one layer further down:
+even at a rate that delivers every activation cleanly (see above), a
+sustained burst of same-command activations doesn't finish taking effect
+the instant the last one is sent — X-Plane keeps draining a real internal
+queue for a measurable time afterward. Measured directly (fire N
+activations at a fixed rate for ~1s, stop, then keep sampling the
+resulting dataref): sustained 25/sec left the value still changing for
+~430ms (3-4 more steps) after the last activation; 15/sec left ~236ms;
+10/sec left **zero** — the value stopped the instant sending stopped.
+This is a genuine speed-vs-responsiveness trade-off inherent to firing a
+command repeatedly fast, not something a shorter `duration` or
+client-side pacing fixes — those control whether each *individual*
+activation lands, not how quickly the aggregate queue drains once you
+stop. Worth checking for *any* future feature that fires the same command
+repeatedly and cares about feeling instantly responsive when input stops,
+not just about a raw throughput number.
 
 ## Value encoding
 
