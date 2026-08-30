@@ -320,7 +320,7 @@
 
       /* tuning knob + power switch */
       html += '<fcu-knob knob-id="rmp-tune" size="170" boss="true" ring="false" detent="10" knurl="false" ' +
-        'bezel-mark="true" cap-inset="34" style="position:absolute;left:646px;top:150px"></fcu-knob>';
+        'bezel-mark="true" cap-inset="34" rate-drag="true" rate-max-hz="13" rate-deadzone-frac="0.075" rate-max-frac="0.27" rate-turbo-mult="4" style="position:absolute;left:646px;top:150px"></fcu-knob>';
       html += '<fcu-lever lever-id="rmp-power" vertical="true" size="46" position="right" ' +
         'style="position:absolute;left:' + (RMP_W - 90) + 'px;top:' + (r3 - 6) + 'px"></fcu-lever>';
       html += cap(RMP_W - 67, r3 - 26, 'ON', { size: 12, glow: true }) +
@@ -365,11 +365,30 @@
         selLit: function () { return !!self._sel; },
         setSel: function (on) {
           self._sel = !!on;
+          var w = self.querySelector('[data-sel]');
           var t = self.querySelector('[data-sel-text]'), d = self.querySelector('[data-sel-dot]');
-          if (t) { t.style.color = on ? AMBER : 'rgba(232,220,184,.18)'; t.style.textShadow = on ? GLOW : 'none'; }
+          /* lit: the whole annunciator face glows semi-dim red, legend and dot
+             warm from amber toward red-orange */
+          if (w) {
+            w.style.background = on
+              ? 'radial-gradient(circle at 50% 60%,#61140c 0%,#3d0d07 62%,#210704 100%)'
+              : 'radial-gradient(circle at 50% 65%,#151b1f 0%,#0d1113 65%,#080b0c 100%)';
+            w.style.boxShadow = on
+              ? 'inset 0 4px 8px rgba(0,0,0,.7), inset 0 -2px 3px rgba(255,120,60,.22),' +
+                ' 0 0 14px rgba(220,60,25,.45), 0 0 30px rgba(200,45,15,.22), 0 1px 0 rgba(190,215,225,.12)'
+              : 'inset 0 4px 8px rgba(0,0,0,.9), inset 0 -2px 3px rgba(190,215,225,.10), 0 1px 0 rgba(190,215,225,.12)';
+          }
+          if (t) {
+            t.style.color = on ? '#ff7a2e' : 'rgba(232,220,184,.18)';
+            t.style.textShadow = on
+              ? '0 0 8px rgba(255,90,30,.75), 0 0 16px rgba(230,50,15,.4), 0 1px 1px rgba(0,0,0,.8)'
+              : 'none';
+          }
           if (d) {
-            d.style.background = on ? AMBER : 'rgba(255,177,90,.16)';
-            d.style.boxShadow = on ? '0 0 9px rgba(255,150,40,.85)' : 'inset 0 1px 2px rgba(0,0,0,.7)';
+            d.style.background = on ? '#ff5f22' : 'rgba(255,177,90,.16)';
+            d.style.boxShadow = on
+              ? '0 0 9px rgba(255,80,25,.9), 0 0 18px rgba(220,50,15,.5)'
+              : 'inset 0 1px 2px rgba(0,0,0,.7)';
           }
         },
         onTransfer: function (fn) { self._xferCb = fn; },

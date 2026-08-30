@@ -83,22 +83,22 @@ const CHANNEL_TO_MIC_BUTTON = {
   cab: "MIC_CAB",
   pa: "MIC_PA",
 };
-// AirbusFBW/ACP1Lights_Raw's own element order — NOT simply sequential by
-// channel name, confirmed the hard way: firing each *Press command in
-// isolation and watching which index actually moved found PA at index 9,
-// not 15 as a first pass (going by the channel list order alone) assumed
-// — see the profile's own _note_on_mic_lights for the full per-index
-// confirmation. vhf3's index is unconfirmed (ACP1/VHF3Press never moved
-// any index at all, live-tested twice — plausibly correct rather than
-// broken, since ToLiss's VHF3 is a datalink/ACARS channel with no voice
-// transmission to select) — kept at the same position ACP1KnobPush uses
-// for vhf3 (confirmed separately, see _note_on_listen_state) as the best
-// available guess, harmless either way since it never lights regardless.
+// AirbusFBW/ACP1Lights_Raw's own element order. UPDATED 2026-08-30: now uses
+// the clean sequential channel-list order (same as ACP1KnobPush and
+// ACP1RotaryPositions — see the profile's own _note_on_mic_lights), pa: 15.
+// An earlier live test had found PA at index 9 instead — that finding isn't
+// re-verified yet, this is a re-attempt on the strength of the other two
+// arrays both turning out sequential; revert pa to 9 if live testing shows
+// the MIC_PA lamp wrong. vhf3's index is unconfirmed either way
+// (ACP1/VHF3Press never moved any index at all, live-tested twice —
+// plausibly correct rather than broken, since ToLiss's VHF3 is a datalink/
+// ACARS channel with no voice transmission to select) — harmless either way
+// since it never lights regardless.
 // Every MIC_* button above is deliberately command-only (no stateDataref)
 // — see _note_on_mic_lights for why their lit state is read off this
 // shared array directly in refresh() instead of through EfisAdapter's own
 // per-button stateIndex mechanism.
-const MIC_LIGHT_INDEX = { vhf1: 0, vhf2: 1, vhf3: 2, hf1: 3, hf2: 4, int: 5, cab: 6, pa: 9 };
+const MIC_LIGHT_INDEX = { vhf1: 0, vhf2: 1, vhf3: 2, hf1: 3, hf2: 4, int: 5, cab: 6, pa: 15 };
 const CHANNEL_TO_VOL_READOUT = { vhf1: "VOL_VHF1", vhf2: "VOL_VHF2" };
 // Every channel this app might ever show a listen lamp for, across any
 // profile — used only to blank lamps on startup/disconnect below, where
@@ -156,69 +156,136 @@ export function blankRmpAcpPanel() {
 /**
  * Wires the ACP's per-channel reception "listen" toggle (whether you can
  * hear a radio, separate from the transmit-select mic_push/MIC_VHF
- * buttons) from the profile's own `listenToggles` array — a shape EfisAdapter's button
- * model doesn't support (one stateDataref per button, not the mix of
- * shared-array-with-index, per-channel-scalar, or command-only-with-no-
- * confirmed-state that different aircraft's profiles actually need here),
- * so this resolves/subscribes directly against the adapter's own client
- * rather than going through the usual buttons/readouts path.
+ * buttons) from the profile's own `listenToggles` array — a shape
+ * EfisAdapter's button model doesn't support (one stateDataref per button,
+ * not a read-modify-write against one index of a dataref several channels
+ * share), so this resolves/subscribes directly against the adapter's own
+ * client rather than going through the usual buttons/readouts path.
  *
- * @param {{channel: string, command?: string, stateDataref?: string, stateIndex?: number}[]} entries
- *   `command`, `stateDataref`, and `stateIndex` are all independently
- *   optional — a channel with no `stateDataref` still gets its command
- *   wired (tapping it does something real), just with no lamp feedback,
- *   rather than faking a state nothing confirms; a channel with no
- *   `command` (e.g. a confirmed lamp dataref but no discoverable toggle
- *   command at all) still shows real lamp state, just doesn't respond to
- *   a tap. Entries sharing the same `stateDataref` are subscribed
- *   together in one indexed call (see xplane-client.js's subscribeDataref
- *   doc on why two separate subscriptions to the same id don't both take
- *   effect).
+ * CORRECTED 2026-08-30: previously went through per-channel Listen{X}
+ * commands, with only ListenVHF1/2/3 confirmed to exist at all (see
+ * _note_on_listen_state's exhaustive live command-list search) and every
+ * other channel left permanently read-only. A live report questioned that
+ * — the earlier "single-index writes are rejected" finding only ruled out
+ * a *partial* write, never a full-array read-modify-write, exactly the
+ * shape already proven for AirbusFBW/ACP1RotaryPositions (see
+ * wireAcpVolumeKnobs). Live-tested directly: flipped one index in a full
+ * 16-element copy of ACP1KnobPush and wrote it back — it stuck (re-read
+ * moments later still showed the flipped value), same mechanism as volume,
+ * just a 0/1 int instead of a 0-1 float. This function now bypasses
+ * commands entirely and drives every channel — including vhf1/vhf2/vhf3,
+ * which used to have real working commands — through the array directly,
+ * mirroring wireAcpVolumeKnobs almost exactly (whole-array subscription
+ * and local cache, not grouped-index, since every entry now needs to
+ * read-modify-write rather than just read).
+ *
+ * @param {{channel: string, stateDataref: string, stateIndex: number}[]} entries
  */
 async function wireListenToggles(adapter, acp, entries) {
   if (!entries || entries.length === 0) return;
 
-  const [commandIds, datarefIds] = await Promise.all([
-    adapter.client.resolveCommandIds(entries.filter((e) => e.command).map((e) => e.command)),
-    adapter.client.resolveDatarefIds([...new Set(entries.filter((e) => e.stateDataref).map((e) => e.stateDataref))]),
-  ]);
+  const datarefNames = [...new Set(entries.map((e) => e.stateDataref))];
+  const datarefIds = await adapter.client.resolveDatarefIds(datarefNames);
 
   const byDataref = new Map();
   for (const entry of entries) {
-    if (!entry.stateDataref) continue;
     if (!byDataref.has(entry.stateDataref)) byDataref.set(entry.stateDataref, []);
     byDataref.get(entry.stateDataref).push(entry);
   }
+
   for (const [datarefName, group] of byDataref) {
     const id = datarefIds.get(datarefName);
     if (id == null) {
-      console.warn(`[rmp-panel] missing dataref ${datarefName} — listen state for ${group.map((e) => e.channel).join(", ")} will show no feedback`);
+      console.warn(`[rmp-panel] missing dataref ${datarefName} — listen state for ${group.map((e) => e.channel).join(", ")} will not work`);
       continue;
     }
-    if (group.every((e) => e.stateIndex != null)) {
-      const indices = group.map((e) => e.stateIndex);
-      adapter.client.subscribeDataref(id, (raw) => group.forEach((e, i) => acp.volume(e.channel)?.setLamp(Number(raw?.[i]) >= 0.5)), indices);
-    } else {
-      // Scalar dataref (no stateIndex) — expected to be one channel per
-      // dataref name in this case, not grouped.
-      adapter.client.subscribeDataref(id, (raw) => acp.volume(group[0].channel)?.setLamp(Number(raw) >= 0.5));
+
+    let cache = null;
+    adapter.client.subscribeDataref(id, (raw) => {
+      if (!Array.isArray(raw)) return;
+      cache = raw.slice();
+      for (const entry of group) acp.volume(entry.channel)?.setLamp(Number(cache[entry.stateIndex]) >= 0.5);
+    });
+
+    for (const entry of group) {
+      // onTap() is registered for every entry (see the module-level note on
+      // vendor/rmp.js's AcpKnob falling back to an unbacked local lamp flip
+      // when no onTap is registered at all) — every entry here has a real
+      // write behind it now, so there's no command-less no-op case left.
+      acp.volume(entry.channel)?.onTap(() => {
+        if (!cache) return;
+        cache = cache.slice();
+        cache[entry.stateIndex] = cache[entry.stateIndex] ? 0 : 1;
+        adapter.client.setDatarefValue(id, cache);
+      });
     }
   }
+}
 
+/**
+ * Wires the ACP's per-channel reception volume knobs from the profile's own
+ * `volumeKnobs` array — a shared 16-element AirbusFBW/ACP1RotaryPositions
+ * float_array, one index per channel (see rmp-acp-toliss-airbus.json's own
+ * _note_on_acp_volume for the confirmed index order and how it was
+ * verified live). Bypasses EfisAdapter's readout/encoder model entirely,
+ * same as wireListenToggles() above and for the same reason: that model
+ * only supports a scalar write to its own dedicated dataref, not a
+ * read-modify-write against one index of a dataref several channels share.
+ *
+ * X-Plane's Web API rejects a single-index write to this array outright
+ * (`incompatible_data`, confirmed live — same limitation as ACP1KnobPush,
+ * see wireListenToggles' own doc comment) — every write below sends the
+ * *whole* 16-element array back, with only the dragged channel's index
+ * changed, computed from a locally-cached copy of the last known array.
+ * The cache comes from subscribing to the dataref as a whole array (no
+ * `index`, unlike wireListenToggles' grouped-index subscriptions — those
+ * only need booleans back and never write, this needs the full array to
+ * safely read-modify-write) and is also updated optimistically on every
+ * local write, so a rapid drag doesn't have to wait for its own write to
+ * echo back before computing the next one.
+ *
+ * Channels with no matching <acp-panel> volume knob (e.g. ToLiss's sat1/
+ * sat2, which have no UI slot at all) simply no-op via `?.` — they're
+ * still listed in the profile for completeness.
+ *
+ * @param {{channel: string, stateDataref: string, stateIndex: number}[]} entries
+ */
+async function wireAcpVolumeKnobs(adapter, acp, entries) {
+  if (!entries || entries.length === 0) return;
+
+  const datarefNames = [...new Set(entries.map((e) => e.stateDataref))];
+  const datarefIds = await adapter.client.resolveDatarefIds(datarefNames);
+
+  const byDataref = new Map();
   for (const entry of entries) {
-    // command is itself optional — some channels have a confirmed lamp
-    // dataref but no discoverable toggle command at all (e.g. ToLiss's
-    // HF1/HF2/LS/MKR/VOR1/VOR2/ADF1/ADF2, see rmp-acp-toliss-airbus.json's
-    // own _note_on_listen_state), so tapping does nothing but the lamp
-    // still shows real state — deliberately silent, not a warning, since
-    // it's an expected/documented gap rather than a missing name.
-    if (!entry.command) continue;
-    const cmdId = commandIds.get(entry.command);
-    if (cmdId == null) {
-      console.warn(`[rmp-panel] missing command ${entry.command} — ${entry.channel} listen toggle will be disabled`);
+    if (!byDataref.has(entry.stateDataref)) byDataref.set(entry.stateDataref, []);
+    byDataref.get(entry.stateDataref).push(entry);
+  }
+
+  for (const [datarefName, group] of byDataref) {
+    const id = datarefIds.get(datarefName);
+    if (id == null) {
+      console.warn(`[rmp-panel] missing dataref ${datarefName} — volume for ${group.map((e) => e.channel).join(", ")} will not work`);
       continue;
     }
-    acp.volume(entry.channel)?.onTap(() => adapter.client.activateCommand(cmdId));
+
+    let cache = null;
+    adapter.client.subscribeDataref(id, (raw) => {
+      if (!Array.isArray(raw)) return;
+      cache = raw.slice();
+      for (const entry of group) acp.volume(entry.channel)?.set(Number(cache[entry.stateIndex]) * 100);
+    });
+
+    for (const entry of group) {
+      acp.volume(entry.channel)?.onChange((value) => {
+        if (!cache) return;
+        const target = value / 100;
+        if (Math.abs(Number(cache[entry.stateIndex]) - target) < 1e-6) return;
+        cache = cache.slice();
+        cache[entry.stateIndex] = target;
+        adapter.client.setDatarefValue(id, cache);
+      });
+    }
   }
 }
 
@@ -238,6 +305,22 @@ export async function wireRmpAcpPanel(adapter) {
   // lamp only ever reflects a confirmed sim state (when the profile has
   // one), never an unconfirmed local guess.
   await wireListenToggles(adapter, acp, adapter.profile.listenToggles);
+  await wireAcpVolumeKnobs(adapter, acp, adapter.profile.volumeKnobs);
+
+  // Same ghost-toggle problem wireListenToggles' own onTap fix addresses
+  // (vendor/rmp.js's AcpKnob falls back to flipping its own unbacked local
+  // lamp on a tap when no onTap was ever registered at all), but for
+  // volumeKnobs-only channels — currently just "pa" (a real knob exists,
+  // but PA is deliberately excluded from listenToggles: it's a transmit/
+  // announce function, not a listen toggle, see rmp-acp-toliss-airbus.json's
+  // own _note_on_listen_state). Skips any channel listenToggles already
+  // covered, so this can never clobber a real command's onTap — onTap is
+  // last-write-wins on the shared knob element (see AcpKnob.api.onTap).
+  const listenChannels = new Set((adapter.profile.listenToggles ?? []).map((e) => e.channel));
+  for (const entry of adapter.profile.volumeKnobs ?? []) {
+    if (listenChannels.has(entry.channel)) continue;
+    acp.volume(entry.channel)?.onTap(() => {});
+  }
 
   // Same drag-end debounce pattern as radio-panel.js/fcu-panel.js's own
   // knobs — one timer per control that can be dragged, so beginAdjust()/
@@ -262,6 +345,14 @@ export async function wireRmpAcpPanel(adapter) {
   // _note_on_window_string for why ToLiss needs this (backup-nav modes
   // whose display shape a scaled number can't represent at all).
   const windowStringByBand = Object.fromEntries((adapter.profile.readouts ?? []).map((r) => [r.name, r.windowString === true]));
+  // Which readouts.datarefs key actually holds the plain numeric value
+  // adjustReadoutValue()/nextStandbyRaw() need for their own math —
+  // "standby" itself for the stock A330 (a plain scaled number there),
+  // but a *different* key for ToLiss's windowString readouts, whose own
+  // "standby" holds display text instead (see COM1's own
+  // _note_on_standby_raw). Falls back to "standby" for any profile that
+  // doesn't declare an encoder at all, matching the stock shape.
+  const standbyValueKeyByBand = Object.fromEntries((adapter.profile.readouts ?? []).map((r) => [r.name, r.encoder?.valueKey ?? "standby"]));
 
   function decodeWindowString(raw) {
     if (typeof raw !== "string") return ""; // the readout's pre-subscription placeholder value is the number 0, not a string
@@ -398,11 +489,21 @@ export async function wireRmpAcpPanel(adapter) {
       // below which has to reproduce it exactly (nextStandbyRaw()) since
       // it's writing the raw value itself.
       const key = tuneMode === "coarse" ? (dir > 0 ? "coarseUp" : "coarseDown") : dir > 0 ? "fineUp" : "fineDown";
-      adapter.press(`${band}.${key}`);
+      // A short explicit duration, not EfisAdapter.press()'s own 0.15s
+      // default — confirmed live 2026-08-30 that the default creates a
+      // real ~6.5/sec ceiling on X-Plane's websocket command_set_is_active
+      // path specifically (the REST /activate endpoint doesn't share this
+      // limit, which is why earlier speed testing against that endpoint
+      // gave a falsely optimistic picture). This is a discrete step
+      // command, not a hold-to-repeat one, so it doesn't need to stay
+      // "active" anywhere near 150ms — 25ms tested clean at a real 25/sec
+      // press rate (see rate-drag's own rate-max-hz on this knob, tuned to
+      // match).
+      adapter.press(`${band}.${key}`, 0.025);
       return;
     }
 
-    const current = Math.round(Number(adapter.getReadoutValue(band, "standby")) || 0);
+    const current = Math.round(Number(adapter.getReadoutValue(band, standbyValueKeyByBand[band])) || 0);
     const next = nextStandbyRaw(band, current, tuneMode, dir);
     const delta = next - current;
     if (delta === 0) return;
@@ -427,6 +528,14 @@ export async function wireRmpAcpPanel(adapter) {
     if (adapter.isLit("RTP_POWER") !== wantOn) adapter.press("RTP_POWER");
   });
 
+  // "right" (up, toward the INT legend) = lit = INT, "left" (down, toward
+  // RAD) = unlit = RAD — see the profile's own INT_RAD note.
+  acp.intRad()?.onChange((pos) => {
+    if (!adapter.isAvailable("INT_RAD")) return;
+    const wantOn = pos === "right";
+    if (adapter.isLit("INT_RAD") !== wantOn) adapter.press("INT_RAD");
+  });
+
   for (const channel of Object.keys(CHANNEL_TO_MIC_BUTTON)) {
     acp.key(channel)?.onPress(() => {
       const name = CHANNEL_TO_MIC_BUTTON[channel];
@@ -437,10 +546,12 @@ export async function wireRmpAcpPanel(adapter) {
   for (const channel of Object.keys(CHANNEL_TO_VOL_READOUT)) {
     const band = CHANNEL_TO_VOL_READOUT[channel];
     // Profiles that don't declare this readout at all (e.g. the ToLiss
-    // profile, which has no confirmed volume mechanism to write through —
-    // see its own _gap_acp_volume) never resolve it, so readoutValues
-    // never gets an entry for it either — skip wiring the knob entirely
-    // rather than firing a "no writable encoder" warning on every drag.
+    // profile, which dropped VOL_VHF1/VOL_VHF2 once its volume knobs moved
+    // to the shared-array approach — see wireAcpVolumeKnobs() and
+    // rmp-acp-toliss-airbus.json's own _note_on_acp_volume) never resolve
+    // it, so readoutValues never gets an entry for it either — skip wiring
+    // the knob entirely rather than firing a "no writable encoder" warning
+    // on every drag.
     if (!adapter.readoutValues.has(band)) continue;
     const knob = acp.volume(channel);
     knob?.onChange((value) => {
@@ -583,6 +694,11 @@ export async function wireRmpAcpPanel(adapter) {
     if (adapter.isAvailable("RTP_POWER")) {
       const wantPos = adapter.isLit("RTP_POWER") ? "right" : "left";
       if (rmp.power()?.get() !== wantPos) rmp.power()?.set(wantPos);
+    }
+
+    if (adapter.isAvailable("INT_RAD")) {
+      const wantPos = adapter.isLit("INT_RAD") ? "right" : "left";
+      if (acp.intRad()?.get() !== wantPos) acp.intRad()?.set(wantPos);
     }
 
     for (const [ch, band] of Object.entries(CHANNEL_TO_VOL_READOUT)) {

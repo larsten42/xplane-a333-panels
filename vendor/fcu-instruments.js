@@ -642,6 +642,154 @@
         if (self._turnCb) self._turnCb(dir);
       }, { passive: false });
 
+      // Opt-in second gesture, alongside (not replacing) the default
+      // linear one below — added for RMP+ACP/Radio's tune knobs, whose
+      // fixed "N px per detent" model can't cover both a fast band change
+      // and a precise single-step nudge without either feeling glacially
+      // slow or dangerously twitchy at some fixed sensitivity in between
+      // (confirmed live 2026-08-30: doubling/quadrupling drag-step still
+      // felt "unbearably slow" for a full retune). rate-drag="true"
+      // switches to a spring-centered rate control instead: hold away
+      // from the grab point to fire steps continuously, faster the
+      // further out you hold (past a small dead zone, quadratic ease-in
+      // so a small nudge stays precise), release (or return within the
+      // dead zone) to stop. The cap leans toward the held direction
+      // instead of tracking cumulative turns, snapping back to level on
+      // release, so the visual reads as "how hard am I holding it over,"
+      // not "how far have I turned it" — every other knob in this file
+      // keeps the original model untouched.
+      var RATE_MODE = flag(this, 'rate-drag', false);
+      if (RATE_MODE) {
+        // Distances are a *fraction of the knob's own current on-screen
+        // size*, not fixed pixels — this whole app scales panels down via
+        // CSS transform to fit smaller viewports (tablets especially),
+        // and e.clientY deltas are always real, unscaled screen pixels.
+        // A fixed-px threshold (confirmed live 2026-08-30: 90px, this
+        // component's first attempt) can end up larger than the entire
+        // visible knob once a panel's scaled down, making max rate
+        // effectively unreachable without dragging your finger well past
+        // the knob's own edge — measured live as "it works, but it's
+        // still very slow" even with rate-max-hz cranked way up, since
+        // the actual drag never got anywhere near the (too-large,
+        // unscaled) threshold that was supposed to unlock it. Re-measured
+        // fresh at each pointerdown (not cached once) so a mid-session
+        // rescale (window resize, FIT toggle) is picked up next press.
+        var RATE_DEADZONE_FRAC = num(this, 'rate-deadzone-frac', 0.05); // fraction of knob height before any stepping starts
+        var RATE_MAX_FRAC = num(this, 'rate-max-frac', 0.35); // fraction of knob height at which stepping hits its max rate
+        var RATE_MIN_HZ = num(this, 'rate-min-hz', 1); // steps/sec just past the dead zone
+        // Default kept under ~6.5/sec deliberately: every command this app
+        // fires (XPlaneClient.activateCommand) holds it "active" for a
+        // fixed 150ms, so anything faster than that overlaps and X-Plane
+        // silently coalesces the extra presses into one — a caller whose
+        // onTurn instead does a direct dataref write (no such throttle)
+        // can safely raise this via the rate-max-hz attribute.
+        var RATE_MAX_HZ = num(this, 'rate-max-hz', 5); // steps/sec at rate-max-px or beyond
+        // A fourth zone beyond rate-max-frac, at a flat multiple of
+        // rate-max-hz rather than continuing the curve — a deliberate
+        // reach-further gesture for "I want to move a lot, right now", not
+        // something you'd land in by accident short of rate-max-frac's own
+        // distance. Started fixed at 2x (no configurable multiplier, since
+        // that's literally what was asked for at the time); made
+        // configurable via rate-turbo-mult once a later request ("make the
+        // fastest zone 2x as fast") needed to change just the turbo
+        // multiplier without also moving rate-max-hz (which would speed up
+        // the whole curve, not only the top zone). rate-turbo-frac still
+        // controls how far out it kicks in, independently.
+        var RATE_TURBO_FRAC = num(this, 'rate-turbo-frac', RATE_MAX_FRAC * 1.6);
+        var RATE_TURBO_MULT = num(this, 'rate-turbo-mult', 2);
+        var RATE_TURBO_HZ = RATE_MAX_HZ * RATE_TURBO_MULT;
+        // No cap-lean visual here (deliberately) — a caller's own onTurn
+        // handler may already own cap.style.transform for its own reasons
+        // (e.g. RMP/Radio's tune knob freezes the cap and spins a
+        // separate bezel to visually decouple coarse/fine mode), and this
+        // component has no way to know that from in here. Fighting over
+        // the same property every tick would flicker. A future version
+        // could add a lean cue through something else (a collar glow
+        // pulse, a dedicated indicator element) without that conflict.
+
+        var rateDragging = false, rateStartY = 0, currentRate = 0, rateAccum = 0, rateLastTs = 0, rateFrame = null;
+        var curDeadzonePx = 8, curMaxPx = 90, curTurboPx = 144; // recomputed at each pointerdown, see above
+
+        var computeRate = function (dy) {
+          var mag = Math.abs(dy);
+          if (mag <= curDeadzonePx) return 0;
+          var dir = dy > 0 ? 1 : -1;
+          if (mag >= curTurboPx) return dir * RATE_TURBO_HZ;
+          var t = Math.min(1, (mag - curDeadzonePx) / (curMaxPx - curDeadzonePx));
+          var hz = RATE_MIN_HZ + (RATE_MAX_HZ - RATE_MIN_HZ) * t * t;
+          return dir * hz;
+        };
+        // Real, enforced minimum gap between fires — not just a curve
+        // parameter, which rateTick's own accumulator could otherwise
+        // blow straight through (see below). rate-max-hz's whole purpose
+        // is staying under whatever ceiling the caller's onTurn can
+        // actually deliver on, so it has to be a hard floor on real
+        // elapsed time, not just an input to the rate math. Based on the
+        // turbo rate (the true peak, not the curve's own rate-max-hz) so
+        // this floor never blocks turbo from actually reaching it.
+        var RATE_MIN_INTERVAL_MS = 1000 / RATE_TURBO_HZ;
+        var rateLastFireTs = 0;
+        var rateTick = function (ts) {
+          if (!rateDragging) return;
+          var dtSec = rateLastTs ? (ts - rateLastTs) / 1000 : 0;
+          rateLastTs = ts;
+          if (currentRate !== 0 && dtSec > 0) {
+            rateAccum += currentRate * dtSec;
+            // At most one real step per tick, and never closer together
+            // than RATE_MIN_INTERVAL_MS — confirmed live 2026-08-30 that
+            // firing several steps synchronously back-to-back (no real
+            // time between them, the previous "drain everything now"
+            // version of this loop) collapses to a single effective step
+            // on X-Plane's side for a command-firing onTurn, the same way
+            // a burst of truly-simultaneous presses does — so a *higher*
+            // rate-max-hz was making bursts *more* likely, not delivering
+            // more real steps. requestAnimationFrame's own cadence plus
+            // this explicit gate now paces real delivery instead; any
+            // rate the curve computes beyond what that gate allows is
+            // just capped here rather than queued to burst out later.
+            if (Math.abs(rateAccum) >= 1 && (ts - rateLastFireTs) >= RATE_MIN_INTERVAL_MS) {
+              var dir = rateAccum > 0 ? 1 : -1;
+              if (self._turnCb) self._turnCb(dir);
+              rateAccum -= dir;
+              rateLastFireTs = ts;
+            }
+            // Clamped, not left to grow — otherwise a sustained high rate
+            // builds a backlog that keeps firing at the capped pace even
+            // after the drag eases up and currentRate has already dropped,
+            // since a slower rate can't "catch up" against a large
+            // leftover balance quickly. Keeps response tied to the
+            // *current* displacement instead.
+            if (rateAccum > 1) rateAccum = 1;
+            if (rateAccum < -1) rateAccum = -1;
+          }
+          rateFrame = requestAnimationFrame(rateTick);
+        };
+        var endRateDrag = function (e) {
+          if (!rateDragging) return;
+          rateDragging = false;
+          currentRate = 0;
+          if (rateFrame != null) cancelAnimationFrame(rateFrame);
+          rateFrame = null;
+          if (e && self.hasPointerCapture(e.pointerId)) self.releasePointerCapture(e.pointerId);
+        };
+        this.addEventListener('pointerdown', function (e) {
+          capture(self, e.pointerId);
+          var knobPx = self.getBoundingClientRect().height || (size * k);
+          curDeadzonePx = knobPx * RATE_DEADZONE_FRAC;
+          curMaxPx = knobPx * RATE_MAX_FRAC;
+          curTurboPx = knobPx * RATE_TURBO_FRAC;
+          rateDragging = true; rateStartY = e.clientY; currentRate = 0; rateAccum = 0; rateLastTs = 0;
+          rateFrame = requestAnimationFrame(rateTick);
+        });
+        this.addEventListener('pointermove', function (e) {
+          if (!rateDragging) return;
+          var dy = rateStartY - e.clientY;
+          currentRate = computeRate(dy);
+        });
+        this.addEventListener('pointerup', endRateDrag);
+        this.addEventListener('pointercancel', endRateDrag);
+        this.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      } else {
       var dragging = false, startY = 0, moved = 0, holdTimer = null, pushed = false;
       var HOLD_MS = num(this, 'hold-ms', 400);
       /* touch-first: one detent per DRAG_STEP px of vertical travel, up = increment */
@@ -682,6 +830,7 @@
       this.addEventListener('pointerup', endDrag);
       this.addEventListener('pointercancel', endDrag);
       this.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      }
 
       if (hasBezel) {
         bezel.style.background = 'repeating-conic-gradient(from 0deg,#3a4247 0deg 2.2deg,#0b0f12 2.2deg 4.4deg)';

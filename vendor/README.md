@@ -67,6 +67,101 @@ as before). Net effect: "drag up = clockwise, scroll down = counter-
 clockwise" now holds on every selector knob in the app, regardless of
 which way that particular knob's own labels are laid out.
 
+**2026-08-30 `rate-drag` attribute on `<fcu-knob>` (hand-patched here,
+needs relaying upstream to Design so the next bundle keeps it)**: added
+for RMP+ACP's tune knob after direct user feedback that even a
+quadrupled-sensitivity `drag-step` (14px default → 7 → 4) still felt
+"unbearably slow" for a real frequency retune — a fixed px-per-detent
+model fundamentally can't cover both "change frequency by a lot" and
+"nudge by one step" without either being glacially slow or dangerously
+twitchy somewhere in between. `rate-drag="true"` replaces that entire
+gesture with a spring-centered rate control instead: hold away from
+the pointer-down position to fire steps continuously, faster the further
+out you hold past a small dead zone (quadratic ease-in, so it's still
+precise just past the dead zone), release or return within the dead zone
+to stop. Entirely separate code path from the default drag-step gesture
+— every other knob using the old model is untouched, and the two are
+mutually exclusive per knob (this is a full gesture replacement, not a
+tweak to the existing one).
+
+One thing this does *not* do, on purpose, worth knowing before reusing it
+elsewhere: no cap-lean visual — a caller's own `onTurn` handler may
+already own `cap.style.transform` for its own reasons (RMP's tune knob
+freezes the cap and spins a separate bezel to visually decouple coarse
+from fine mode), which a lean effect would otherwise flicker against
+every tick.
+
+`rate-max-hz` defaults to 5/sec, on the theory that a caller whose
+`onTurn` fires a *command* per tick (ToLiss's RMP tuning, no writable
+frequency dataref to write to instead) needed to stay under X-Plane's own
+~6.5/sec command-coalescing throttle (every command this app fires holds
+"active" for a fixed 150ms — `XPlaneClient.activateCommand`'s own default
+`duration`). **That theory doesn't hold for ToLiss's own commands
+specifically** — confirmed live 2026-08-30 by firing `RMP1FreqUpSml` 30
+times at ~33/sec (30ms apart) and seeing the resulting frequency change
+match or exceed the naive full-count expectation, not fall short of it;
+no evidence of dropped/coalesced steps at that rate at all. The ~6.5/sec
+caution is real for at least one of X-Plane's own *native* step commands
+(`stby_com1_fine_up_833`, documented in `radio-panel-generic.json`'s own
+notes) — it just doesn't automatically transfer to every plugin-defined
+command, and apparently doesn't for this one. RMP's own `rate-max-hz`
+override (below) reflects this; the 5/sec default here stays conservative
+for whatever the *next* caller turns out to be, until proven otherwise
+for that command too.
+
+**2026-08-30 dead zone/max-rate distances made relative to the knob's own
+size, not fixed pixels — a real bug, not a tuning problem**: the first
+`rate-drag` implementation used fixed pixel thresholds (`rate-deadzone`
+8px, `rate-max-px` 90px) measured against raw `e.clientY` deltas. Those
+are always real, unscaled screen pixels — but this app scales whole
+panels down via CSS `transform` to fit smaller viewports (tablets
+especially), and a fixed 90px threshold can end up *larger than the
+entire visible knob* once scaled down, making max rate practically
+unreachable without dragging a finger well past the knob's own edge.
+Live-reported as "it works, but it's still very slow" even with
+`rate-max-hz` cranked to 180 — raising the rate ceiling did nothing
+because the drag never got anywhere near the (too-large) distance
+threshold that was supposed to unlock it, so nearly every real drag
+stayed deep in the slow end of the curve regardless of how high the
+ceiling went. `rate-deadzone`/`rate-max-px` are gone; replaced with
+`rate-deadzone-frac`/`rate-max-frac` (defaults `0.05`/`0.35`), fractions
+of the knob's own `getBoundingClientRect().height` measured fresh at
+*each* `pointerdown` (not cached once at connect time), so a mid-session
+rescale (window resize, the app's own FIT toggle) is picked up on the
+next press without needing the page reloaded.
+
+**2026-08-30 the real bug: synchronous multi-step bursts collapse on
+X-Plane's side, so a *higher* `rate-max-hz` was making things worse, not
+faster**: even after the distance fix above, max rate still felt
+"extremely slow" — cranking `rate-max-hz` to 180 changed nothing
+perceptible. `rateTick`'s accumulator was firing every step the rate math
+said was due in a given animation-frame tick via a tight `while` loop —
+at 180/sec and 60fps that's 3 `self._turnCb()` calls per tick, fired
+synchronously with no real time between them at all. Confirmed live via
+a raw REST test completely outside this component: 60 command activations
+fired with no pacing (parallel requests, essentially simultaneous)
+registered only 4 real steps, while the exact same command paced at a
+real 30/sec (33ms apart) registered all of them (see `radio-panel.js`'s
+sibling investigation, or just: X-Plane appears to collapse multiple
+same-command activations arriving in one processing pass down to one
+effective step, independent of each activation's own `duration`). A
+synchronous same-tick burst is exactly that pathological case — so
+raising `rate-max-hz` just meant *more* steps got requested per burst and
+*more* of them got silently dropped, not that more real steps landed.
+Fixed two ways: `rateTick` now fires at most one real step per animation
+frame (`requestAnimationFrame`'s own ~60Hz cadence paces delivery), and
+`rate-max-hz` is now enforced as a real minimum elapsed-time gap between
+fires (`RATE_MIN_INTERVAL_MS = 1000 / RATE_MAX_HZ`), not just an input to
+the curve math the burst could blow straight through. The accumulator is
+also clamped to at most one pending step (not left to build an unbounded
+backlog at a high requested rate), so easing off the drag responds to the
+*current* displacement immediately instead of continuing to fire out a
+stale backlog. `rmp-tune`'s own `rate-max-hz` dropped from the untested
+180 stress-test value back down to `30` — the exact rate directly
+confirmed clean with real pacing; worth raising again later if 30 still
+feels slow, but only after testing whatever higher value the same way,
+not by assuming higher is safe.
+
 ## radio.js
 
 The generic radio-stack panel component ("Claude Design"'s vanilla build,
@@ -97,11 +192,30 @@ audio select). See the touch-sensitivity rework noted under
 `fcu-instruments.js` above — the tuning/selector knobs here are the same
 components FCU/EFIS use.
 
+**2026-08-30 tune knob drag-step lowered, twice**: both units' tune
+`<fcu-knob>` now sets `drag-step="4"` (was relying on
+`fcu-instruments.js`'s own default of 14px) — first dropped to 7, then to
+4 after that still felt like it needed too much drag distance per detent,
+per direct user feedback both times. This is a plain value in `unit()`'s
+own markup template, not a new attribute/behavior — a config tweak, not a
+hand-patch needing anything relayed upstream. Applies to *both* MHz
+(coarse ring) and kHz (fine boss) grab zones equally: unit() builds one
+physical `<fcu-knob>` per radio unit, and `src/radio-panel.js`
+distinguishes coarse/fine by where the pointer grabbed it (see its own
+`pickRing()`), not by two separate knob elements each with their own
+`drag-step` — there's no way to speed up one grab zone's detent-per-px
+sensitivity without the other on this component. If a genuinely
+kHz-only tweak is ever wanted, the right lever is
+`src/radio-panel.js`'s own fine-mode step size (`nextStandbyRaw()`'s
+`step.fine`), not this attribute.
+
 **To update when a new bundle arrives:** same process as fcu-instruments.js
 above — copy both `fcu-instruments.js` and `radio.js` from the new bundle
-over these two files, reload and sanity-check all three panels (the shared
-library file affects FCU/EFIS too), and check `src/radio-panel.js` against
-the new bundle's own integration doc if any method names/signatures moved.
+over these two files (re-apply the `drag-step="4"` tweak above if the new
+bundle's markup doesn't have it), reload and sanity-check all three panels
+(the shared library file affects FCU/EFIS too), and check
+`src/radio-panel.js` against the new bundle's own integration doc if any
+method names/signatures moved.
 
 ## rmp.js
 
@@ -150,6 +264,155 @@ behavior unchanged, so this is purely additive). `src/rmp-panel.js` uses it
 to fire the real `listen_press00`/`listen_press01` commands and drive the
 lamp only from the sim's confirmed `listen_status`, never an unconfirmed
 local guess.
+
+**2026-08-30 SEL annunciator, reddish (from Design, partially applied)**:
+`RmpPanel.api.setSel(on)`'s lit state reworked to glow semi-dim red across
+the whole round annunciator face (a new `background`/`box-shadow` on the
+`[data-sel]` container itself, not just the legend text/dot), and the
+legend/dot color shifted from plain amber toward red-orange — applied
+as-given, no regressions found in that part. **One line from Design's own
+diff deliberately not applied**: `connectedCallback()` calling
+`api.setSel(flag(this, 'sel', true))` right after `_paint()`, defaulting
+the indicator to *lit* at construction time. `src/rmp-panel.js`'s own
+`refresh()` already calls `setSel()` with the real confirmed value on
+every single refresh cycle (including the first one), so this default
+does nothing useful for this app's integration — worse, since
+`adapter.connect()` resolves dataref/command ids over the network before
+that first real `refresh()` can run, this would make the SEL annunciator
+visibly flash on at full brightness on every page load/reconnect before
+snapping to its real state a moment later, which the previous
+implicit-`false`-until-set behavior didn't do. Needs relaying back to
+Design: either drop that line, or default to `false`.
+
+**2026-08-30 tune knob drag-step lowered, then superseded by
+`rate-drag`**: `rmp-tune` (the RMP's own tune knob, coarse ring + fine
+boss, same shape as radio.js's tune knobs) briefly matched radio.js's own
+`drag-step="4"` tweak, but that whole model — however low `drag-step`
+goes — still fundamentally trades off "fast for a big change" against
+"precise for a small one," and a real retune still felt "unbearably
+slow." Switched to `rate-drag="true"` instead (see
+`fcu-instruments.js`'s own entry above for the full mechanism and its
+caveats) — `rmp-tune` no longer has a `drag-step` attribute at all.
+`radio.js`'s tune knobs are intentionally **not** switched over yet —
+they weren't the ones reported as too slow, and radio.js's own internal
+`_wireKnobs()`/`_tune()` coarse/fine handling hasn't been checked for the
+same `onTurn`-frequency assumptions `rate-drag`'s design leans on, so
+flipping it there without that check first risked a real regression
+rather than a proven fix. `radio.js` and `rmp.js` each carry their own
+knob markup, so a fix (or gap) in one doesn't reach the other.
+
+**2026-08-30 `rate-max-hz`/`rate-max-frac`, tuned in several wrong
+directions before landing here**: `fcu-instruments.js`'s own 5/sec
+default for `rate-drag` was written on the assumption that any
+command-firing `onTurn` needed to stay under X-Plane's command-coalescing
+throttle — confirmed live the same day that ToLiss's own
+`AirbusFBW/RMP1FreqUpSml` doesn't actually need that specific caution
+(see `fcu-instruments.js`'s own entry above for the test). Raised to 18,
+still felt "slow AF" live; raised further to 180 as a stress test
+specifically to see if *any* value helped, which it didn't — that turned
+out to be because a higher requested rate was making a real bug in the
+component *worse*, not because the value itself was too conservative
+(see `fcu-instruments.js`'s own two entries above: the
+fixed-vs-scaled-panel distance issue, then the synchronous-burst-collapse
+issue underneath it). With both of those fixed, a raw paced REST test
+confirmed 60/sec still delivers cleanly (30 presses at ~16.7ms spacing
+registered all of them) — settled on `rate-max-hz="50"` as a margin under
+that tested-clean ceiling, not the ceiling itself. Also dropped
+`rate-max-frac` from the original 0.35 to `0.18`: even at 30/sec, a
+report of "100kHz taking 3-4 real seconds" (≈6-7 effective steps/sec)
+implied a real drag was landing well short of the distance needed to
+reach anywhere near max rate, not that max rate itself was too low —
+halving the distance needed makes the fast end of the curve reachable
+with a much more casual drag.
+
+**2026-08-30 the actual final answer: `duration`, not this component at
+all**: still reported as the same speed after both fixes above — the real
+knob-side console log this time showed it correctly firing right at the
+configured max rate with real, properly-paced gaps between fires. So the
+bottleneck was never in this component; it was downstream, in
+`XPlaneClient.activateCommand()`'s own default 150ms `duration`, which
+turns out to create a real ~6.5/sec ceiling on repeated activations of the
+*same* command over the websocket (see
+`docs/xplane-web-api-notes.md`'s own new section on this — a real X-Plane
+API behavior, not specific to this component or this knob). Fixed at the
+source: `EfisAdapter.press()` now takes an optional `durationSeconds`,
+and `src/rmp-panel.js`'s tune-knob press passes `0.025` instead of the
+default — tested clean at a real 25/sec with that duration. `rate-max-hz`
+here dropped from `50` to `25` to match the rate actually validated with
+that shorter duration, not because 50 was itself unsafe *for this
+component* — the real ceiling was always about the command layer
+underneath it, not the drag gesture generating the calls.
+
+**2026-08-30 one more layer down: a real command queue, not just a
+rate ceiling**: 25/sec delivered every step (confirmed above), but a
+follow-up report — "moving from fast back to center, a lot of buffered
+turns still continue" — turned out to be real too, and independent of
+this component entirely: a raw script test (fire a burst at a sustained
+rate, stop, then keep sampling the real dataref) showed X-Plane's own
+command queue keeps *draining* for a while after the last activation is
+sent, not just processing each one instantly. Measured directly: 25/sec
+sustained for 1s leaves ~430ms (3-4 steps) of continued movement after
+stopping; 15/sec leaves ~236ms; 10/sec leaves **zero** — stops the
+instant input stops. This is a genuine, unavoidable trade-off (max speed
+vs. instant-stop feel), not a bug anywhere in this app's own code, and
+not something a shorter `duration` or a different accumulator can fix —
+it's downstream of everything this app controls. Given a direct choice
+between "faster but has real momentum/coast" and "slower but stops
+exactly when you let go," `rate-max-hz` here is now `10` — a live user
+call favoring predictability over top speed, not a technical default.
+Revisit if the trade-off preference ever changes, informed by the same
+measurements above rather than re-discovering them.
+
+**2026-08-30 final feel pass, after VHF1/VHF2 went direct-write**: with
+VHF1/VHF2's own speed problem fixed at the dataref layer instead (see
+`ARCHITECTURE.md`'s RMP+ACP section), the queue-draining trade-off above
+now only applies to the command-based channels (VHF3/HF1/HF2/backup
+NAV) — so a live "make it feel good now that it actually works" pass
+bumped things up a little: `rate-deadzone-frac`/`rate-max-frac` both ×1.5
+(`0.05`→`0.075`, `0.18`→`0.27`) for a slightly larger, easier-to-hit
+gesture zone, and `rate-max-hz` `10`→`13` — still comfortably inside the
+"no coast on release" territory measured above for the command-based
+channels, while giving VHF1/VHF2's now-unlimited direct write a bit more
+headroom too.
+
+**2026-08-30 a fourth zone: `rate-turbo-frac`, flat 2x `rate-max-hz`
+beyond it**: a live request for "one more, even faster range" — rather
+than extending the existing quadratic curve further (which would make
+the whole curve's fast end more sensitive, harder to land precisely on
+the already-tuned max), this is a distinct fourth zone past
+`rate-max-frac`'s own distance (default `rate-max-frac × 1.6`, own
+attribute `rate-turbo-frac`): a flat `rate-max-hz × 2` the moment you
+cross it, not a continuation of the ramp. `RATE_MIN_INTERVAL_MS` is now
+based on the turbo rate specifically, not `rate-max-hz`, so the pacing
+gate itself doesn't become the thing blocking turbo from actually
+reaching double speed. Worth knowing: this doubles the effective rate
+for the *command-based* channels too (VHF3/HF1/HF2/backup NAV), not just
+VHF1/VHF2's unlimited direct write — at `rate-max-hz="13"`, turbo means
+26/sec for those channels, back in the range where the queue-draining
+trade-off measured earlier reappears (extrapolating from the 15/sec →
+236ms and 25/sec → 430ms data points, expect something similar around
+26/sec). That's presumably an acceptable trade for a deliberate
+reach-far gesture rather than the default speed, but it hasn't been
+independently re-measured at exactly this rate — do that first if the
+coast on a turbo-then-release for those channels ever gets reported as
+surprising.
+
+**2026-08-30, same day, `rate-turbo-mult`**: a follow-up live request
+("make the fastest zone 2x as fast") needed to speed up *only* the turbo
+zone, not the whole curve — bumping `rate-max-hz` itself would also raise
+the ceiling of the normal (non-turbo) range, changing how the knob feels
+well before you reach turbo. `RATE_TURBO_HZ` was hardcoded as
+`RATE_MAX_HZ × 2`; generalized to `RATE_MAX_HZ × rate-turbo-mult` (default
+`2`, so every existing caller is unaffected) and set `rate-turbo-mult="4"`
+on the RMP's own tune knob specifically — `rate-max-hz="13"` unchanged, so
+turbo goes from 26/sec to 52/sec while the rest of the curve stays exactly
+where it was. Worth noting on top of the paragraph above: 52/sec on the
+command-based channels (VHF3/HF1/HF2/backup NAV, and now COM2 too — see
+`config/profiles/rmp-acp-toliss-airbus.json`'s own COM2 history for why
+COM2 ended up command-only after all) is well past the two data points the
+queue-draining trade-off was measured at (15/sec → 236ms coast, 25/sec →
+430ms coast) — expect a longer coast on release than either of those,
+unmeasured at this specific rate.
 
 **Integration scope**: `src/rmp-panel.js` currently only wires VHF1/VHF2
 (COM1/COM2) — see `config/profiles/rmp-acp-a333.json`'s own description for

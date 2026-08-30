@@ -147,7 +147,7 @@
       seg('r' + u + 's', cy, 520, pair[1]) +
 
       '<fcu-knob knob-id="tune' + u + '" size="124" boss="true" ring="false" detent="12" knurl="false" ' +
-        'bezel-mark="true" cap-inset="30" style="position:absolute;left:818px;top:' + (cy - 62) + 'px"></fcu-knob>' +
+        'bezel-mark="true" cap-inset="30" drag-step="4" style="position:absolute;left:818px;top:' + (cy - 62) + 'px"></fcu-knob>' +
       cap(797, cy - 30, '+', { size: 15 }) +
       cap(797, cy + 30, '&minus;', { size: 15 }) +
       '<div data-mode="' + u + '-coarse" style="position:absolute;left:856px;top:' + (cy + 72) + 'px;' +
