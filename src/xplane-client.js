@@ -13,6 +13,23 @@
 
 const API_VERSION = "v2"; // datarefs + commands; this app doesn't need v3 flight endpoints
 
+// Every REST call below used to have no timeout at all — a `fetch()` with
+// nothing else stopping it can hang indefinitely if a connection stalls
+// after the TCP handshake instead of cleanly failing (a dropped packet with
+// no RST, a firewall silently black-holing rather than rejecting — both far
+// more common self-reported symptoms on Windows than macOS/Linux). A live
+// report (2026-09-05, Windows) of the *first* connect sometimes taking
+// "almost a minute" for the displays to show anything is consistent with
+// exactly this: resolveDatarefIds/resolveCommandIds's one-time bulk
+// `listAll()` fetch (the full dataref/command list, easily tens of
+// thousands of entries with a real aircraft add-on loaded) or the fallback
+// per-name lookup loop stalling with no error and no clock running out on
+// its own. This doesn't fix whatever's actually stalling the connection —
+// it turns a silent, unbounded hang into a clear, fast failure the retry/
+// diagnostics machinery can actually react to instead of the tab just
+// looking frozen.
+const REST_TIMEOUT_MS = 10000;
+
 export class XPlaneClient {
   /**
    * @param {string} host
@@ -60,12 +77,52 @@ export class XPlaneClient {
     this._lastPanelHint = undefined;
     this._reconnectAttempt = 0;
     this._reconnectTimer = null;
+
+    // Per-second counts of incoming dataref values, for getStats() below —
+    // added after a live report (2026-09-05) of intermittent lag with no
+    // way to tell whether it was "the network can't keep up with how much
+    // we're pushing" or something else entirely. Key is a whole second
+    // (Math.floor(Date.now()/1000)), value is how many individual dataref
+    // values arrived that second (one dataref_update_values *message* can
+    // carry many — this counts values, the more meaningful "how much data"
+    // number, not wire messages). Pruned lazily in getStats(), not on
+    // every message, since this is only ever read a couple of times a
+    // second at most (app.js's diagnostics panel, while open).
+    this._rateBuckets = new Map();
+  }
+
+  /**
+   * A live snapshot for the diagnostics panel: how many distinct datarefs
+   * this client currently has an active subscription on (a rough proxy for
+   * "how much is this connection asking X-Plane to push," since almost all
+   * of that traffic is subscription pushes, not our own outgoing writes/
+   * commands), and the actual recent inbound rate. Both go up with every
+   * panel wired at connect time (see app.js's connect(), which wires every
+   * panel's adapter regardless of which one is currently shown) — read
+   * together, a subscription count that looks reasonable next to a rate
+   * that doesn't (or a rate that periodically craters to near-zero) is a
+   * concrete, reportable symptom instead of "it feels laggy sometimes."
+   */
+  getStats() {
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const sec of this._rateBuckets.keys()) {
+      if (sec < nowSec - 5) this._rateBuckets.delete(sec); // stale — long idle, or just started
+    }
+    // Only fully-elapsed seconds count toward the average — the current
+    // (still-filling) bucket would otherwise make the rate look like it's
+    // dropping every time this happens to be called early in a new second.
+    const completeSecs = [...this._rateBuckets.keys()].filter((s) => s < nowSec);
+    const total = completeSecs.reduce((sum, s) => sum + this._rateBuckets.get(s), 0);
+    return {
+      subscriptionCount: this._datarefListeners.size,
+      valuesPerSecond: completeSecs.length ? Math.round(total / completeSecs.length) : 0,
+    };
   }
 
   // ---------------------------------------------------------------- REST --
 
   async getCapabilities() {
-    const res = await fetch(this.capabilitiesUrl);
+    const res = await fetch(this.capabilitiesUrl, { signal: AbortSignal.timeout(REST_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`capabilities: HTTP ${res.status}`);
     const body = await res.json();
     return body.data ?? body;
@@ -138,25 +195,37 @@ export class XPlaneClient {
     // that failure mode.
     for (const name of names) {
       if (map.has(name)) continue;
-      const res = await fetch(`${this.restBase}/${kind}?filter[name]=${encodeURIComponent(name)}`);
-      if (!res.ok) continue;
-      const body = await res.json();
-      const id = body.data?.[0]?.id;
-      if (id != null) map.set(name, id);
+      // A timeout/network error here is treated the same as a 404 (skip
+      // this one name, keep going) rather than letting it fail the whole
+      // resolution — this loop already tolerates individual names being
+      // genuinely missing (see this method's own top comment), and one
+      // name stalling shouldn't take an entire panel's worth of otherwise-
+      // fine buttons/readouts down with it.
+      try {
+        const res = await fetch(`${this.restBase}/${kind}?filter[name]=${encodeURIComponent(name)}`, {
+          signal: AbortSignal.timeout(REST_TIMEOUT_MS),
+        });
+        if (!res.ok) continue;
+        const body = await res.json();
+        const id = body.data?.[0]?.id;
+        if (id != null) map.set(name, id);
+      } catch {
+        continue;
+      }
     }
     return map;
   }
 
   /** Fetch the *entire* dataref or command list. Large; not cached itself (see _resolveIds for the cached path used by name resolution). */
   async listAll(kind) {
-    const res = await fetch(`${this.restBase}/${kind}`);
+    const res = await fetch(`${this.restBase}/${kind}`, { signal: AbortSignal.timeout(REST_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`list ${kind}: HTTP ${res.status}`);
     const body = await res.json();
     return body.data ?? [];
   }
 
   async getDatarefValueOnce(id) {
-    const res = await fetch(`${this.restBase}/datarefs/${id}/value`);
+    const res = await fetch(`${this.restBase}/datarefs/${id}/value`, { signal: AbortSignal.timeout(REST_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`get dataref ${id}: HTTP ${res.status}`);
     const body = await res.json();
     return body.data;
@@ -279,6 +348,8 @@ export class XPlaneClient {
     }
 
     if (msg.type === "dataref_update_values" && msg.data) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      this._rateBuckets.set(nowSec, (this._rateBuckets.get(nowSec) ?? 0) + Object.keys(msg.data).length);
       for (const [idStr, rawValue] of Object.entries(msg.data)) {
         const id = Number(idStr);
         for (const listener of this._datarefListeners.get(id) ?? []) listener(rawValue);

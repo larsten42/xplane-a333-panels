@@ -117,6 +117,16 @@ function serveStatic(req, res) {
   });
 }
 
+// Without this, a stalled upstream connection (X-Plane not responding after
+// the TCP handshake — a dropped packet with no RST, a firewall silently
+// black-holing rather than rejecting) left this fetch() hanging forever,
+// with the browser's own client-side timeout (src/xplane-client.js's
+// REST_TIMEOUT_MS) the only thing that would eventually notice. Failing
+// fast here too means a genuinely stalled connect surfaces in seconds, not
+// up to a minute — see a live 2026-09-05 report of exactly that on first
+// connect.
+const UPSTREAM_TIMEOUT_MS = 10000;
+
 async function proxyRest(req, res) {
   const upstreamUrl = `http://${XPLANE_HOST}:${XPLANE_PORT}${req.url}`;
   try {
@@ -126,6 +136,7 @@ async function proxyRest(req, res) {
       method: req.method,
       headers: { "content-type": req.headers["content-type"] ?? "application/json" },
       body: chunks.length ? Buffer.concat(chunks) : undefined,
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     const body = Buffer.from(await upstream.arrayBuffer());
     res.writeHead(upstream.status, {
@@ -207,12 +218,12 @@ function listInterfaces() {
   return out;
 }
 
-// Fresh on every status request rather than a background poll — this data
-// is only ever looked at by someone actively viewing the console, and a
-// short timeout keeps a downed X-Plane from ever hanging the page. Also
-// timed (latencyMs) so the console can distinguish "down" from "up but
-// slow to respond" — the latter looks identical to a boolean and was
-// otherwise invisible.
+// Always a real, fresh REST round trip — no caching — so both the
+// console's own on-demand poll and the "Recheck now" button always show a
+// genuinely current number, and a short timeout keeps a downed X-Plane
+// from ever hanging the page. Also timed (latencyMs) so the console can
+// distinguish "down" from "up but slow to respond" — the latter looks
+// identical to a boolean and was otherwise invisible.
 async function checkXPlane() {
   const startedAt = Date.now();
   try {
@@ -228,11 +239,51 @@ async function checkXPlane() {
   }
 }
 
+// A rolling history of checkXPlane() samples, for the console's own
+// latency sparkline — added after a live report (2026-09-05) of
+// intermittent lag with no way to tell whether X-Plane's own
+// responsiveness was actually degrading sometimes, or the trouble was
+// somewhere else entirely (the tablet-side diagnostics panel in src/app.js
+// covers the tablet<->server leg; this covers the other leg, server<->
+// X-Plane, which is what actually matters on the machine running X-Plane
+// itself). A single fresh-on-request number (the pre-existing behavior
+// above) can't show *intermittent* — by the time anyone loads the console
+// to look, a transient stall has already passed. Sampled independently of
+// whether anyone's actually viewing the console (not just piggybacked on
+// the page's own poll) specifically so opening the console after noticing
+// lag still shows a useful trailing history, not just data from the
+// moment it was opened.
+const MAX_LATENCY_HISTORY = 60; // 5 minutes at the 5s sampling interval below
+const latencyHistory = [];
+async function sampleXPlane() {
+  const sample = { t: Date.now(), ...(await checkXPlane()) };
+  latencyHistory.push(sample);
+  if (latencyHistory.length > MAX_LATENCY_HISTORY) latencyHistory.shift();
+  return sample;
+}
+setInterval(() => {
+  sampleXPlane().catch((err) => console.error("[console] background X-Plane sample failed:", err.message));
+}, 5000);
+
 async function serveConsoleStatus(req, res) {
-  const xplane = await checkXPlane();
+  // Always a real fresh check here too (not just the last background
+  // sample, which could be up to 5s stale) — this is also what feeds
+  // "Recheck now", which should reflect the instant it was clicked. This
+  // call is itself recorded into latencyHistory below like any other
+  // sample, so an actively-open console (polling every 3s) simply gets
+  // denser history for free, on top of the steady 5s background rate.
+  const xplane = await sampleXPlane();
   const body = JSON.stringify({
     server: { version: SERVER_VERSION, uptimeSeconds: Math.round(process.uptime()), port: PORT },
-    xplane: { host: XPLANE_HOST, port: XPLANE_PORT, isDefault: IS_DEFAULT_XPLANE_ADDRESS, ...xplane },
+    xplane: {
+      host: XPLANE_HOST,
+      port: XPLANE_PORT,
+      isDefault: IS_DEFAULT_XPLANE_ADDRESS,
+      reachable: xplane.reachable,
+      version: xplane.version,
+      latencyMs: xplane.latencyMs,
+      history: latencyHistory.map((s) => ({ t: s.t, reachable: s.reachable, latencyMs: s.latencyMs })),
+    },
     interfaces: listInterfaces(),
     clients: [...connectedClients.values()].map((c) => ({
       ip: c.ip,
@@ -396,11 +447,27 @@ function connectUpstream(host, port, path, { onOpen, onText, onBinary, onClose, 
       "Sec-WebSocket-Version": "13",
     },
   });
+  // Bounds only the handshake phase — X-Plane's port accepting the TCP
+  // connection but then never sending anything back at all (no upgrade, no
+  // HTTP response, no error) previously left this request, and the
+  // tablet's own connection waiting on it, hanging with no feedback
+  // whatsoever. A live 2026-09-05 report of the first connect sometimes
+  // taking "almost a minute" is consistent with exactly this on a flaky
+  // link. `req.setTimeout()` operates on the underlying socket, which is
+  // the *same* socket this code keeps using after a successful upgrade —
+  // explicitly cleared there (see below) so it doesn't keep counting down
+  // against a healthy long-lived connection, where ordinary idle gaps
+  // between keypresses/knob ticks are completely normal and must not be
+  // mistaken for a stall.
+  req.setTimeout(UPSTREAM_TIMEOUT_MS, () => {
+    req.destroy(new Error(`X-Plane didn't respond to the websocket handshake within ${UPSTREAM_TIMEOUT_MS / 1000}s`));
+  });
   req.end();
 
   let socket = null;
   req.on("upgrade", (res, sock, head) => {
     socket = sock;
+    socket.setTimeout(0); // handshake succeeded — see the setTimeout call above
     // Node's raw net.Socket defaults to Nagle's algorithm on, which holds
     // small writes back waiting to coalesce with more data or an ACK —
     // exactly wrong for this traffic (a stream of tiny, latency-sensitive

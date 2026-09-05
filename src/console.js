@@ -3,6 +3,10 @@
 // concepts here at all; this is host-machine status, not cockpit state.
 
 const REFRESH_MS = 3000;
+// Matches xplane-latency's own ">500ms" bad-status threshold above — a bar
+// at or beyond this height means "as bad as the plain status text already
+// flags," not an arbitrary second scale.
+const SPARKLINE_LATENCY_CAP_MS = 500;
 
 async function refresh() {
   let data;
@@ -33,12 +37,45 @@ function render(data) {
   // timeout) looks identical to "Connected" without this — flag it so a
   // flaky link doesn't hide behind a plain green status.
   latencyEl.className = data.xplane.reachable && data.xplane.latencyMs > 500 ? "status-bad" : "";
+  renderSparkline(data.xplane.history ?? []);
 
   renderInterfaces(data.interfaces);
   renderClients(data.clients);
   renderDisconnects(data.recentDisconnects ?? []);
 
   document.getElementById("last-updated").textContent = "Updated " + new Date().toLocaleTimeString();
+}
+
+// One bar per sample, oldest to newest left-to-right, height proportional
+// to response time (capped — see SPARKLINE_LATENCY_CAP_MS's own comment)
+// so a single huge spike doesn't squash every other bar down to invisible.
+// An unreachable sample draws full-height red regardless of its
+// latencyMs, which there is just "however long the failed attempt took to
+// time out," not a meaningful response time. Fixed viewBox coordinate
+// space with preserveAspectRatio="none" (see console.css's .sparkline)
+// means this never needs to know its own rendered pixel size — it just
+// stretches to fill whatever width the layout gives it.
+function renderSparkline(history) {
+  const svg = document.getElementById("latency-sparkline");
+  svg.textContent = "";
+  if (history.length === 0) return;
+
+  const w = 300;
+  const h = 40;
+  const barW = w / history.length;
+  const ns = "http://www.w3.org/2000/svg";
+  history.forEach((sample, i) => {
+    const bad = !sample.reachable;
+    const frac = bad ? 1 : Math.min(1, (sample.latencyMs ?? 0) / SPARKLINE_LATENCY_CAP_MS);
+    const barH = Math.max(1, frac * h);
+    const rect = document.createElementNS(ns, "rect");
+    rect.setAttribute("x", String(i * barW));
+    rect.setAttribute("y", String(h - barH));
+    rect.setAttribute("width", String(Math.max(1, barW - 1)));
+    rect.setAttribute("height", String(barH));
+    rect.style.fill = bad ? "var(--c-red)" : "var(--c-green)";
+    svg.appendChild(rect);
+  });
 }
 
 function renderInterfaces(interfaces) {

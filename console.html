@@ -36,6 +36,11 @@
         <dt>Version</dt><dd id="xplane-version">—</dd>
         <dt>Response time</dt><dd id="xplane-latency">—</dd>
       </dl>
+      <div class="sparkline-wrap">
+        <svg id="latency-sparkline" class="sparkline" viewBox="0 0 300 40" preserveAspectRatio="none"></svg>
+        <p class="muted sparkline-caption">Response time, last 5 min — a spike or gap here means X-Plane
+          itself is the slow leg, not the network to your device.</p>
+      </div>
       <button id="recheck-btn" type="button">Recheck now</button>
     </div>
   </section>

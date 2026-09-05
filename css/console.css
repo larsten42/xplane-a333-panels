@@ -84,6 +84,17 @@ section {
 .status-ok { color: var(--c-green); }
 .status-bad { color: var(--c-red); }
 
+.sparkline-wrap { margin-top: 12px; }
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 40px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.sparkline-caption { margin: 6px 0 0; }
+
 .interfaces {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

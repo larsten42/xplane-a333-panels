@@ -13,6 +13,8 @@
 // Deliberately not wired through EfisAdapter or any X-Plane concept —
 // this is pure layout/visibility UI, same category as panel-autoscale.js.
 
+import { storageGet, storageSet } from "./safe-storage.js";
+
 const STORAGE_KEY = "mcdu.rmpVisibility";
 const CLICK_THRESHOLD_PX = 6; // below this, a pointerdown+up counts as a tap, not a drag
 
@@ -37,7 +39,7 @@ export function setupRmpMinimap(mapEl, scrollEl, sections, refreshAutoscale) {
   function loadVisibility() {
     let saved = null;
     try {
-      saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+      saved = JSON.parse(storageGet(STORAGE_KEY, "null"));
     } catch {
       // fall through to the all-visible default below
     }
@@ -51,7 +53,7 @@ export function setupRmpMinimap(mapEl, scrollEl, sections, refreshAutoscale) {
   }
 
   function saveVisibility() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(visible));
+    storageSet(STORAGE_KEY, JSON.stringify(visible));
   }
 
   function applyVisibility() {

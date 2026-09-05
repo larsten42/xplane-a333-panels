@@ -10,6 +10,7 @@ import { wireRmpAcpPanel, blankRmpAcpPanel } from "./rmp-panel.js";
 import { setupAutoscale } from "./panel-autoscale.js";
 import { setupRmpMinimap } from "./rmp-minimap.js";
 import { startWakeLock, stopWakeLock } from "./wake-lock.js";
+import { storageGet, storageSet } from "./safe-storage.js";
 
 // <fcu-panel>/<efis-panel>/<radio-panel>'s native, unscaled pixel size —
 // see their own INTEGRATION.md's "Sizing" table. Needed here (not just
@@ -101,6 +102,8 @@ const els = {
   diagSnapServer: document.getElementById("diag-snap-server"),
   diagSnapOnline: document.getElementById("diag-snap-online"),
   diagSnapNet: document.getElementById("diag-snap-net"),
+  diagSnapSubs: document.getElementById("diag-snap-subs"),
+  diagSnapRate: document.getElementById("diag-snap-rate"),
 };
 
 // Reconnecting swaps in new adapters/keypad bound to a new client, and
@@ -115,6 +118,12 @@ const els = {
 // top-level code — including every addEventListener() call after it.
 let detachKeyboardInput = null;
 let mcduKeypad = null;
+// The most recently created XPlaneClient (connect() builds a brand-new one
+// every time — see its own comment) — module-level purely so the
+// diagnostics panel's live stats (renderDiagSnapshot()) can reach whichever
+// one is currently active without connect() having to thread it through.
+// null before the first-ever connect attempt.
+let currentClient = null;
 
 restoreConnectionForm();
 restoreTheme();
@@ -190,11 +199,11 @@ els.barToggle.addEventListener("click", () => {
   const hidden = document.body.classList.toggle("bar-hidden");
   els.barToggle.textContent = hidden ? "▼" : "▲";
   els.barToggle.title = hidden ? "Show top bar" : "Hide top bar";
-  localStorage.setItem(BAR_HIDDEN_KEY, hidden ? "1" : "0");
+  storageSet(BAR_HIDDEN_KEY, hidden ? "1" : "0");
 });
 
 function restoreBarVisibility() {
-  const hidden = localStorage.getItem(BAR_HIDDEN_KEY) === "1";
+  const hidden = storageGet(BAR_HIDDEN_KEY) === "1";
   document.body.classList.toggle("bar-hidden", hidden);
   els.barToggle.textContent = hidden ? "▼" : "▲";
   els.barToggle.title = hidden ? "Show top bar" : "Hide top bar";
@@ -228,11 +237,11 @@ document.addEventListener("fullscreenchange", () => {
 // DOM structure changes.
 els.themeSelect.addEventListener("change", () => {
   document.body.dataset.theme = els.themeSelect.value;
-  localStorage.setItem(THEME_KEY, els.themeSelect.value);
+  storageSet(THEME_KEY, els.themeSelect.value);
 });
 
 function restoreTheme() {
-  const theme = localStorage.getItem(THEME_KEY) ?? "flat";
+  const theme = storageGet(THEME_KEY, "flat");
   els.themeSelect.value = theme;
   document.body.dataset.theme = theme;
 }
@@ -244,11 +253,11 @@ function restoreTheme() {
 // they're meaningless there.
 els.panelSelect.addEventListener("change", () => {
   showPanel(els.panelSelect.value);
-  localStorage.setItem(PANEL_KEY, els.panelSelect.value);
+  storageSet(PANEL_KEY, els.panelSelect.value);
 });
 
 function restorePanel() {
-  const panel = localStorage.getItem(PANEL_KEY) ?? "mcdu";
+  const panel = storageGet(PANEL_KEY, "mcdu");
   els.panelSelect.value = panel;
   showPanel(panel);
 }
@@ -261,12 +270,12 @@ function restorePanel() {
 // out rather than left clickable into a panel that would just show
 // unresolved/disabled everything.
 els.aircraftSelect.addEventListener("change", () => {
-  localStorage.setItem(AIRCRAFT_KEY, els.aircraftSelect.value);
+  storageSet(AIRCRAFT_KEY, els.aircraftSelect.value);
   applyAircraftAvailability();
 });
 
 function restoreAircraft() {
-  els.aircraftSelect.value = localStorage.getItem(AIRCRAFT_KEY) ?? "a333";
+  els.aircraftSelect.value = storageGet(AIRCRAFT_KEY, "a333");
   applyAircraftAvailability();
 }
 
@@ -286,7 +295,7 @@ function applyAircraftAvailability() {
   // currently selected panel option becomes unavailable for this aircraft.
   if (els.panelSelect.selectedOptions[0]?.disabled) {
     els.panelSelect.value = "radio";
-    localStorage.setItem(PANEL_KEY, "radio");
+    storageSet(PANEL_KEY, "radio");
     showPanel("radio");
   }
 }
@@ -316,7 +325,7 @@ els.connectBtn.addEventListener("click", () => {
 
 function restoreConnectionForm() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+    const saved = JSON.parse(storageGet(STORAGE_KEY, "{}"));
     els.cdu.value = saved.cdu ?? "1";
   } catch {
     // defaults from the <select> markup are fine
@@ -324,7 +333,7 @@ function restoreConnectionForm() {
 }
 
 function saveConnectionForm() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ cdu: els.cdu.value }));
+  storageSet(STORAGE_KEY, JSON.stringify({ cdu: els.cdu.value }));
 }
 
 function setStatus(state, detail) {
@@ -380,7 +389,28 @@ function renderDiagSnapshot() {
   els.diagSnapNet.textContent = conn
     ? `${conn.effectiveType ?? "—"}${conn.downlink != null ? `, ~${conn.downlink}Mbps` : ""}${conn.rtt != null ? `, ~${conn.rtt}ms rtt` : ""}`
     : "—";
+  // Real numbers instead of "it feels laggy sometimes" — added after a live
+  // report (2026-09-05) of intermittent lag with no way to tell whether the
+  // connection was actually struggling to keep up or something else was
+  // going on. Every panel's adapter is wired at connect time regardless of
+  // which one is currently shown (see connect()'s own structure), so the
+  // subscription count reflects the *sum* across all of them, not just
+  // whatever's on screen right now.
+  if (currentClient) {
+    const stats = currentClient.getStats();
+    els.diagSnapSubs.textContent = String(stats.subscriptionCount);
+    els.diagSnapRate.textContent = `~${stats.valuesPerSecond}/sec`;
+  } else {
+    els.diagSnapSubs.textContent = "—";
+    els.diagSnapRate.textContent = "—";
+  }
 }
+
+// Keeps the snapshot's live numbers (status, subscription count, data
+// rate) actually current while the panel is left open to watch — a
+// one-shot render on open wouldn't catch a rate that craters mid-episode,
+// which is exactly the moment this is meant to help diagnose.
+let diagRefreshTimer = null;
 
 function buildDiagText() {
   const lines = [
@@ -390,6 +420,8 @@ function buildDiagText() {
     `Server: ${els.diagSnapServer.textContent}`,
     `Browser online: ${els.diagSnapOnline.textContent}`,
     `Network: ${els.diagSnapNet.textContent}`,
+    `Active subscriptions: ${els.diagSnapSubs.textContent}`,
+    `Incoming data rate: ${els.diagSnapRate.textContent}`,
     `User agent: ${navigator.userAgent}`,
     "",
     "Log:",
@@ -402,8 +434,20 @@ els.diagToggle.addEventListener("click", () => {
   renderDiagSnapshot();
   renderDiagLog();
   els.diagPanel.showModal();
+  clearInterval(diagRefreshTimer);
+  diagRefreshTimer = setInterval(renderDiagSnapshot, 1000);
 });
 els.diagClose.addEventListener("click", () => els.diagPanel.close());
+// <dialog>'s own "close" event fires however the dialog actually closes —
+// this button, Esc, or a backdrop click — so stopping the refresh timer
+// here (rather than duplicating it in the button's own click handler)
+// covers all three; without it, the timer would keep running (and
+// pointlessly touching the DOM) forever after closing any way but this
+// button.
+els.diagPanel.addEventListener("close", () => {
+  clearInterval(diagRefreshTimer);
+  diagRefreshTimer = null;
+});
 els.diagClear.addEventListener("click", () => {
   diagLog.length = 0;
   renderDiagLog();
@@ -439,6 +483,7 @@ async function connect() {
   // panels — MCDU and EFIS just subscribe to different datarefs/commands
   // over it, so switching panels never needs a reconnect.
   const client = new XPlaneClient(window.location.hostname, window.location.port || 80);
+  currentClient = client;
   client.onStatusChange = (state, detail) => setStatus(state, detail?.message);
   client.onDiagnostic = (entry) => logDiag(entry.level, entry.message);
 

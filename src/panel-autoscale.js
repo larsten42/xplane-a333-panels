@@ -20,6 +20,8 @@
 //     anything real and "fit both dimensions" would just shrink both
 //     panels to whatever the *shorter* one needs.
 
+import { storageGet, storageSet } from "./safe-storage.js";
+
 const STORAGE_KEY = "mcdu.autoscale";
 
 /**
@@ -79,7 +81,7 @@ function fitToContainer(container, panelEl, nativeWidth, nativeHeight, mode, wid
  *   0.3-floor fallback computed from clientWidth:0 while it was hidden).
  */
 export function setupAutoscale(toggleBtn, panels) {
-  let enabled = localStorage.getItem(STORAGE_KEY) !== "0"; // default on
+  let enabled = storageGet(STORAGE_KEY) !== "0"; // default on
 
   const applyAll = () => {
     for (const p of panels) {
@@ -100,7 +102,7 @@ export function setupAutoscale(toggleBtn, panels) {
 
   toggleBtn.addEventListener("click", () => {
     enabled = !enabled;
-    localStorage.setItem(STORAGE_KEY, enabled ? "1" : "0");
+    storageSet(STORAGE_KEY, enabled ? "1" : "0");
     applyAll();
   });
 
