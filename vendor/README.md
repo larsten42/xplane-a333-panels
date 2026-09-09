@@ -414,6 +414,22 @@ queue-draining trade-off was measured at (15/sec → 236ms coast, 25/sec →
 430ms coast) — expect a longer coast on release than either of those,
 unmeasured at this specific rate.
 
+**2026-09-09, coarse/fine asymmetry — fixed in src/rmp-panel.js, not
+here**: a live report that the MHz (coarse) ring felt "pretty sensitive
+and fast" once the kHz (fine) ring's own feel was dialed in traces back to
+this component having no concept of "coarse ring" vs "fine ring" at all —
+`rateTick`'s accumulator fires ticks at one shared rate regardless of
+which ring the drag started on, and RMP's own `onTurn` handler is what
+decides whether a tick means a small kHz step or a whole-MHz one. Same
+tick rate, much bigger real value change per tick in coarse mode — tuning
+`rate-max-hz` for a good kHz feel necessarily made MHz feel proportionally
+faster, not a bug in this file. Deliberately NOT fixed here (no
+`rate-coarse-mult`-style attribute added) since this component has no way
+to know which ring a tick belongs to in the first place — RMP's own
+`onTurn` already does, so it just drops every other tick while in coarse
+mode instead, halving the MHz ring's effective rate with zero changes to
+this file. See src/rmp-panel.js's own comment at that drop for the detail.
+
 **Integration scope**: `src/rmp-panel.js` currently only wires VHF1/VHF2
 (COM1/COM2) — see `config/profiles/rmp-acp-a333.json`'s own description for
 what's still unwired (VHF3/HF1/HF2/AM/NAV/VOR/LS/ADF/BFO on the RTP and the

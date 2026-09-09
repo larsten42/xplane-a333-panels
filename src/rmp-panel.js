@@ -453,6 +453,7 @@ export async function wireRmpAcpPanel(adapter) {
   let tuneMode = "fine";
   let tuneFineAngle = 0;
   let tuneBezelAngle = 0;
+  let tuneCoarseTickParity = false;
   const tuneKnob = rmp.knob();
   const tuneKnobEl = tuneKnob?.root;
   const pickRing = (e) => {
@@ -467,6 +468,23 @@ export async function wireRmpAcpPanel(adapter) {
   tuneKnob.onTurn((dir) => {
     const band = CHANNEL_TO_BAND[rmp.channel()];
     if (!band || adapter.unresolved.has(band)) return;
+
+    if (tuneMode === "coarse") {
+      // The rate-drag gesture (vendor/fcu-instruments.js) has one shared
+      // tick rate with no concept of "coarse ring" vs "fine ring" — a live
+      // report found the coarse (MHz) ring "pretty sensitive and fast"
+      // once that rate was tuned to feel right on the fine (kHz) ring,
+      // since the same tick rate means a much bigger real frequency
+      // change per second in coarse mode (whole-MHz steps vs small kHz
+      // ones). Halved here by simply dropping every other coarse-mode
+      // tick — the visual bezel spin below is driven by the same ticks
+      // that survive this, so it slows down in lockstep, not just the
+      // real value — rather than plumbing a second, ring-specific rate
+      // curve into the vendored widget for one knob's one ring. The fine
+      // ring's own feel is completely untouched.
+      tuneCoarseTickParity = !tuneCoarseTickParity;
+      if (!tuneCoarseTickParity) return;
+    }
 
     // Same visual decoupling as radio.js: in coarse mode, undo the cap
     // rotation the knob primitive's own onTurn handler already applied
