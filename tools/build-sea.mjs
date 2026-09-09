@@ -28,52 +28,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { SHIPPED_ASSETS, assertNoMissingImports } from "./shipped-assets.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUILD_DIR = path.join(ROOT, "build-sea");
 
 // Same relative paths tools/mcdu-server.js's serveStatic() resolves URLs
-// against — keep this in sync with build-release.mjs's INCLUDE (that list
-// also has "tools/mcdu-server.js" itself, which doesn't belong here: it's
-// this build's *main* script, not a served asset).
-const ASSETS = [
-  "index.html",
-  "console.html",
-  "manifest.webmanifest",
-  "icons/icon.svg",
-  "css/mcdu.css",
-  "css/console.css",
-  "vendor/fcu-instruments.js",
-  "vendor/radio.js",
-  "vendor/rmp.js",
-  "vendor/qrcode-generator.js",
-  "fonts/B612Mono-Regular.ttf",
-  "fonts/OFL.txt",
-  "config/profiles/default-fms.json",
-  "config/profiles/mcdu-toliss-airbus.json",
-  "config/profiles/b738-fms.json",
-  "config/profiles/efis-a333.json",
-  "config/profiles/efis-toliss-airbus.json",
-  "config/profiles/fcu-a333.json",
-  "config/profiles/radio-panel-generic.json",
-  "config/profiles/rmp-acp-a333.json",
-  "config/profiles/rmp-acp-toliss-airbus.json",
-  "src/app.js",
-  "src/mcdu-adapter.js",
-  "src/mcdu-keypad.js",
-  "src/mcdu-screen.js",
-  "src/xplane-client.js",
-  "src/efis-adapter.js",
-  "src/efis-panel.js",
-  "src/fcu-panel.js",
-  "src/radio-panel.js",
-  "src/rmp-panel.js",
-  "src/rmp-minimap.js",
-  "src/readout-formats.js",
-  "src/panel-autoscale.js",
-  "src/wake-lock.js",
-  "src/console.js",
-];
+// against — see tools/shipped-assets.mjs, shared with build-release.mjs so
+// there's exactly one list to keep in sync with reality, not two. Doesn't
+// include "tools/mcdu-server.js" itself (build-release.mjs's own sibling
+// list does): here, that file is this build's *main* script, not a served
+// asset.
+const ASSETS = SHIPPED_ASSETS;
+
+assertNoMissingImports((rel) => fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 const platform = process.platform;
 const defaultName = platform === "win32" ? "mcdu-server-win.exe" : `mcdu-server-${platform}-${process.arch}`;

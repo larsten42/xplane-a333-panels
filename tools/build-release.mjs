@@ -10,51 +10,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SHIPPED_ASSETS, assertNoMissingImports } from "./shipped-assets.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
 
 // Relative to ROOT. Directories are copied recursively as-is.
-const INCLUDE = [
-  "index.html",
-  "console.html",
-  "manifest.webmanifest",
-  "icons/icon.svg",
-  "package.json", // read by tools/mcdu-server.js to show the app version on the operator console — not shipped in the SEA build, see build-sea.mjs
-  "css/mcdu.css",
-  "css/console.css",
-  "vendor/fcu-instruments.js",
-  "vendor/radio.js",
-  "vendor/rmp.js",
-  "vendor/qrcode-generator.js",
-  "fonts/B612Mono-Regular.ttf",
-  "fonts/OFL.txt",
-  "config/profiles/default-fms.json",
-  "config/profiles/mcdu-toliss-airbus.json",
-  "config/profiles/b738-fms.json",
-  "config/profiles/efis-a333.json",
-  "config/profiles/efis-toliss-airbus.json",
-  "config/profiles/fcu-a333.json",
-  "config/profiles/radio-panel-generic.json",
-  "config/profiles/rmp-acp-a333.json",
-  "config/profiles/rmp-acp-toliss-airbus.json",
-  "src/app.js",
-  "src/mcdu-adapter.js",
-  "src/mcdu-keypad.js",
-  "src/mcdu-screen.js",
-  "src/xplane-client.js",
-  "src/efis-adapter.js",
-  "src/efis-panel.js",
-  "src/fcu-panel.js",
-  "src/radio-panel.js",
-  "src/rmp-panel.js",
-  "src/rmp-minimap.js",
-  "src/readout-formats.js",
-  "src/panel-autoscale.js",
-  "src/wake-lock.js",
-  "src/console.js",
-  "tools/mcdu-server.js",
-];
+// package.json is read by tools/mcdu-server.js to show the app version on
+// the operator console — not shipped in the SEA build (build-sea.mjs),
+// which embeds the version at build time instead — see that file's own
+// getServerVersion(). tools/mcdu-server.js itself is the one thing in
+// SHIPPED_ASSETS's sibling list (build-sea.mjs's ASSETS) that does NOT
+// belong here: there, it's the SEA's own main script, not a served asset;
+// here, it's exactly what someone downloading this zip actually runs.
+const INCLUDE = [...SHIPPED_ASSETS, "package.json", "tools/mcdu-server.js"];
+
+assertNoMissingImports((rel) => fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 fs.rmSync(DIST, { recursive: true, force: true });
 
